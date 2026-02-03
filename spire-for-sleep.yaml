@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sleep-spire
+  namespace: apps
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sleep-spire
+  namespace: apps
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sleep-spire
+  template:
+    metadata:
+      labels:
+        app: sleep-spire
+        # CRITICAL: This matches your ClusterSPIFFEID podSelector
+        spiffe.io/spire-managed-identity: "true"
+      annotations:
+        # This injects the Istio proxy and mounts the SPIRE socket
+        inject.istio.io/templates: "sidecar,spire"
+    spec:
+      serviceAccountName: sleep-spire
+      containers:
+      - name: sleep
+        image: curlimages/curl
+        command: ["/bin/sleep", "infinity"]

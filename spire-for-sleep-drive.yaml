@@ -1,0 +1,37 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sleep-spire
+  namespace: apps
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sleep-spire
+  namespace: apps
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sleep-spire
+  template:
+    metadata:
+      labels:
+        app: sleep-spire
+        # This triggers the SPIRE Controller to create the ID
+        spiffe.io/spire-managed-identity: "true"
+      annotations:
+        # 1. Standard injection only (No custom templates needed)
+        sidecar.istio.io/inject: "true"
+        
+        # 2. Define the CSI Volume directly here
+        sidecar.istio.io/userVolume: '[{"name":"workload-socket","csi":{"driver":"csi.spiffe.io","readOnly":true}}]'
+
+        # 3. Mount it to the sidecar
+        sidecar.istio.io/userVolumeMount: '[{"name":"workload-socket","mountPath":"/run/secrets/workload-spiffe-uds","readOnly":true}]'
+    spec:
+      serviceAccountName: sleep-spire
+      containers:
+      - name: sleep
+        image: curlimages/curl
+        command: ["/bin/sleep", "infinity"]

@@ -1,0 +1,37 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: debug-spire
+  namespace: apps
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: debug-spire
+  namespace: apps
+  labels:
+    app: debug-spire
+    spiffe.io/spire-managed-identity: "true"
+  annotations:
+    sidecar.istio.io/inject: "true"
+    # We explicitly tell Istio to ALSO mount this volume into the sidecar
+    sidecar.istio.io/userVolumeMount: '[{"name":"workload-socket","mountPath":"/run/secrets/workload-spiffe-uds","readOnly":true}]'
+spec:
+  serviceAccountName: debug-spire
+
+  # 1. DEFINE THE VOLUME GLOBALLY
+  volumes:
+    - name: workload-socket
+      csi:
+        driver: "csi.spiffe.io"
+        readOnly: true
+
+  containers:
+    - name: tools
+      image: ubuntu:latest
+      command: ["/bin/sleep", "infinity"]
+      # 2. MOUNT IT INTO YOUR APP CONTAINER
+      volumeMounts:
+        - name: workload-socket
+          mountPath: /run/secrets/workload-spiffe-uds
+          readOnly: true

@@ -1,0 +1,11 @@
+spec:
+  template:
+    metadata:
+      labels:
+        # TRIGGER: Register this gateway with SPIRE
+        spiffe.io/spire-managed-identity: "true"
+      annotations:
+        # INJECTION: Mount the socket
+        sidecar.istio.io/inject: "true"
+        sidecar.istio.io/userVolume: '[{"name":"workload-socket","csi":{"driver":"csi.spiffe.io","readOnly":true}}]'
+        sidecar.istio.io/userVolumeMount: '[{"name":"workload-socket","mountPath":"/run/secrets/workload-spiffe-uds","readOnly":true}]'
