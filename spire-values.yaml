@@ -1,0 +1,21 @@
+global:
+  spire:
+    # Explicitly set the trust domain
+    trustDomain: "example.org"
+
+spire-agent:
+  csi:
+    enabled: true
+    driverClass: "csi.spiffe.io"
+
+# This section fixes the "wrong type" crash by explicitely defining the config
+spire-server:
+  controllerManager:
+    enabled: true
+    serviceAccount:
+      create: true
+      name: spire-controller-manager
+    # We define this to satisfy the template logic
+    identities:
+      clusterSPIFFEIDs:
+        enabled: true

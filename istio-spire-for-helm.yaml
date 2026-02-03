@@ -1,0 +1,19 @@
+# istio-spire-values.yaml
+meshConfig:
+  trustDomain: "example.org" # Make sure this matches your SPIRE trust domain
+
+sidecarInjectorWebhook:
+  templates:
+    spire: |
+      spec:
+        containers:
+        - name: istio-proxy
+          volumeMounts:
+          - name: workload-socket
+            mountPath: /run/secrets/workload-spiffe-uds
+            readOnly: true
+        volumes:
+          - name: workload-socket
+            csi:
+              driver: "csi.spiffe.io"
+              readOnly: true
