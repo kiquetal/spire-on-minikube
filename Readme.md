@@ -72,12 +72,31 @@ kubectl apply -f - <<EOF
 apiVersion: spire.spiffe.io/v1alpha1
 kind: ClusterSPIFFEID
 metadata:
-  name: istio-ingressgateway-reg
+  name: istio-ingress
 spec:
   spiffeIDTemplate: "spiffe://{{ .TrustDomain }}/ns/{{ .PodMeta.Namespace }}/sa/{{ .PodSpec.ServiceAccountName }}"
   workloadSelectorTemplates:
-    - "k8s:ns:istio-system"
+    - "k8s:ns:istio-ingress"
     - "k8s:sa:istio-ingress"
+EOF
+```
+
+### Register Cluster SPIFFE ID for Sidecars (Auto-registration)
+This will auto-register any pod with the `spiffe.io/spire-managed-identity: "true"` label in the `apps` namespace.
+
+```bash
+kubectl apply -f - <<EOF
+apiVersion: spire.spiffe.io/v1alpha1
+kind: ClusterSPIFFEID
+metadata:
+  name: istio-sidecar-reg
+spec:
+  spiffeIDTemplate: "spiffe://{{ .TrustDomain }}/ns/{{ .PodMeta.Namespace }}/sa/{{ .PodSpec.ServiceAccountName }}"
+  podSelector:
+    matchLabels:
+      spiffe.io/spire-managed-identity: "true"
+  workloadSelectorTemplates:
+    - "k8s:ns:apps"
 EOF
 ```
 
@@ -102,10 +121,9 @@ kubectl label namespace apps istio-injection=enabled --overwrite
 # 2. Deploy httpbin
 kubectl apply -f httpbin-spire.yaml
 
-# 3. Register HttpBin with SPIRE
-# You can use the provided script:
-chmod +x register-httpbin.sh
-./register-httpbin.sh
+# 3. Verify SPIRE Registration
+# With ClusterSPIFFEID, registration is automatic. Check the SPIRE server:
+kubectl exec -n spire-server spire-server-0 -- /opt/spire/bin/spire-server entry show -spiffeID spiffe://cluster.local/ns/apps/sa/httpbin
 ```
 
 ## Step 6: Test Sleep Client
