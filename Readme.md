@@ -32,6 +32,18 @@ helm install istio-base istio/base -n istio-system --create-namespace
 # 2. Install Istiod (Control Plane) with SPIRE integration
 helm install istiod istio/istiod -n istio-system --wait -f istio-spire-values.yaml
 
+### Understanding `istio-spire-values.yaml`
+
+The values provided to Helm configure Istio to integrate natively with SPIRE:
+
+- **Global Trust Root**: `meshConfig.defaultConfig.caCertificatesPem` ensures every injected sidecar knows to trust the SPIRE root certificate for mTLS.
+- **Custom Sidecar Template**: `sidecarInjectorWebhook.templates.spire` defines a named template that:
+    - Mounts the **SPIRE Agent socket** via the CSI driver.
+    - Mounts the **SPIRE Bundle** (root CA) from a ConfigMap.
+    - Sets `ISTIO_META_WORKLOAD_SOCKET_PATH` so the Envoy proxy knows where to find the socket.
+
+To use this template, workloads must be annotated with `inject.istio.io/templates: "sidecar,spire"`.
+
 # 3. Install Istio Ingress Gateway
 helm install istio-ingress istio/gateway -n istio-ingress --create-namespace --wait
 
@@ -121,9 +133,11 @@ kubectl label namespace apps istio-injection=enabled --overwrite
 # 2. Deploy httpbin
 kubectl apply -f httpbin-spire.yaml
 
+> **Note**: `httpbin-spire.yaml` uses the `inject.istio.io/templates: "sidecar,spire"` annotation to apply the SPIRE template configured in Step 2.
+
 # 3. Verify SPIRE Registration
 # With ClusterSPIFFEID, registration is automatic. Check the SPIRE server:
-kubectl exec -n spire-server spire-server-0 -- /opt/spire/bin/spire-server entry show -spiffeID spiffe://cluster.local/ns/apps/sa/httpbin
+kubectl exec -n spire-server spire-server-0 -- /opt/spire/bin/spire-server entry show -spiffeID spiffe://example.org/ns/apps/sa/httpbin
 ```
 
 ## Step 6: Test Sleep Client
