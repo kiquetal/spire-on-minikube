@@ -58,24 +58,26 @@ If you have manual registration scripts, ensure the `-parentID` matches the new 
 
 ## 4. Apply the changes
 
-After updating the files, re-apply the Helm charts:
+After updating the files, re-apply the Helm charts. 
+
+> **Important**: Since Istio was installed using Helm (as seen in `Readme.md`), you should continue using `helm upgrade` to apply changes. Avoid using `istioctl install` on a Helm-managed installation, as it can cause configuration drift and conflicts between the two management tools.
 
 ```bash
 # Update SPIRE
-helm upgrade spire spiffe/spire -n spire -f spire-values.yaml
+helm upgrade spire spiffe/spire -n spire-server -f spire-values.yaml
 
 # Update Istio
-istioctl install -f istio-spire-values.yaml
+helm upgrade istiod istio/istiod -n istio-system -f istio-spire-values.yaml
 ```
 
 ## 5. Verification
 
 Verify that the SPIRE server is using the new cluster name by checking the logs:
 ```bash
-kubectl logs -n spire deployment/spire-server -c spire-server | grep "my-cluster"
+kubectl logs -n spire-server statefulset/spire-server -c spire-server | grep "my-cluster"
 ```
 
 Also, verify the Istio proxy configuration for any workload:
 ```bash
-istioctl proxy-config bootstrap <pod-name> | grep cluster_name
+istioctl proxy-config bootstrap <pod-name> -n <namespace> | grep cluster_name
 ```
