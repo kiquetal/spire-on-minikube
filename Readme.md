@@ -190,3 +190,6 @@ kubectl exec -n spire-server $SPIRE_SERVER -- \
   -selector k8s:sa:httpbin
 ```
 
+#### reset level
+
+./istio-1.28.3/bin/istioctl proxy-config log $INGRESS_POD -n istio-ingress --level info

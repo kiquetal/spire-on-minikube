@@ -1,0 +1,10 @@
+spec:
+  template:
+    spec:
+      containers:
+      - name: istio-proxy
+        volumeMounts:
+        # Aquí está el cambio: apuntamos a 'spire-bundle' en lugar de 'istio'
+        - name: spire-root-override
+          mountPath: /var/run/secrets/spire-bundle
+          readOnly: true

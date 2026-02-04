@@ -1,0 +1,1435 @@
+[
+    {
+        "name": "virtualInbound",
+        "address": {
+            "socketAddress": {
+                "address": "0.0.0.0",
+                "portValue": 15006
+            }
+        },
+        "filterChains": [
+            {
+                "filterChainMatch": {
+                    "destinationPort": 15006
+                },
+                "filters": [
+                    {
+                        "name": "istio.metadata_exchange",
+                        "typedConfig": {
+                            "@type": "type.googleapis.com/udpa.type.v1.TypedStruct",
+                            "typeUrl": "type.googleapis.com/envoy.tcp.metadataexchange.config.MetadataExchange",
+                            "value": {
+                                "enable_discovery": true,
+                                "protocol": "istio-peer-exchange"
+                            }
+                        }
+                    },
+                    {
+                        "name": "istio.stats",
+                        "typedConfig": {
+                            "@type": "type.googleapis.com/stats.PluginConfig",
+                            "disableHostHeaderFallback": true
+                        }
+                    },
+                    {
+                        "name": "envoy.filters.network.tcp_proxy",
+                        "typedConfig": {
+                            "@type": "type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy",
+                            "statPrefix": "BlackHoleCluster",
+                            "cluster": "BlackHoleCluster"
+                        }
+                    }
+                ],
+                "name": "virtualInbound-blackhole"
+            },
+            {
+                "filterChainMatch": {
+                    "transportProtocol": "tls",
+                    "applicationProtocols": [
+                        "istio-http/1.0",
+                        "istio-http/1.1",
+                        "istio-h2"
+                    ]
+                },
+                "filters": [
+                    {
+                        "name": "istio.metadata_exchange",
+                        "typedConfig": {
+                            "@type": "type.googleapis.com/udpa.type.v1.TypedStruct",
+                            "typeUrl": "type.googleapis.com/envoy.tcp.metadataexchange.config.MetadataExchange",
+                            "value": {
+                                "enable_discovery": true,
+                                "protocol": "istio-peer-exchange"
+                            }
+                        }
+                    },
+                    {
+                        "name": "envoy.filters.network.http_connection_manager",
+                        "typedConfig": {
+                            "@type": "type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager",
+                            "statPrefix": "InboundPassthroughCluster;",
+                            "routeConfig": {
+                                "name": "InboundPassthroughCluster",
+                                "virtualHosts": [
+                                    {
+                                        "name": "inbound|http|0",
+                                        "domains": [
+                                            "*"
+                                        ],
+                                        "routes": [
+                                            {
+                                                "name": "default",
+                                                "match": {
+                                                    "prefix": "/"
+                                                },
+                                                "route": {
+                                                    "cluster": "InboundPassthroughCluster",
+                                                    "timeout": "0s",
+                                                    "retryPolicy": {
+                                                        "retryOn": "reset-before-request",
+                                                        "numRetries": 2
+                                                    },
+                                                    "maxStreamDuration": {
+                                                        "maxStreamDuration": "0s",
+                                                        "grpcTimeoutHeaderMax": "0s"
+                                                    }
+                                                },
+                                                "decorator": {
+                                                    "operation": ":0/*"
+                                                }
+                                            }
+                                        ]
+                                    }
+                                ],
+                                "validateClusters": false
+                            },
+                            "httpFilters": [
+                                {
+                                    "name": "istio.metadata_exchange",
+                                    "typedConfig": {
+                                        "@type": "type.googleapis.com/udpa.type.v1.TypedStruct",
+                                        "typeUrl": "type.googleapis.com/io.istio.http.peer_metadata.Config",
+                                        "value": {
+                                            "downstream_discovery": [
+                                                {
+                                                    "istio_headers": {}
+                                                },
+                                                {
+                                                    "workload_discovery": {}
+                                                }
+                                            ],
+                                            "downstream_propagation": [
+                                                {
+                                                    "istio_headers": {}
+                                                }
+                                            ]
+                                        }
+                                    }
+                                },
+                                {
+                                    "name": "envoy.filters.http.grpc_stats",
+                                    "typedConfig": {
+                                        "@type": "type.googleapis.com/envoy.extensions.filters.http.grpc_stats.v3.FilterConfig",
+                                        "emitFilterState": true,
+                                        "statsForAllMethods": false
+                                    }
+                                },
+                                {
+                                    "name": "envoy.filters.http.fault",
+                                    "typedConfig": {
+                                        "@type": "type.googleapis.com/envoy.extensions.filters.http.fault.v3.HTTPFault"
+                                    }
+                                },
+                                {
+                                    "name": "envoy.filters.http.cors",
+                                    "typedConfig": {
+                                        "@type": "type.googleapis.com/envoy.extensions.filters.http.cors.v3.Cors"
+                                    }
+                                },
+                                {
+                                    "name": "istio.stats",
+                                    "typedConfig": {
+                                        "@type": "type.googleapis.com/stats.PluginConfig",
+                                        "disableHostHeaderFallback": true
+                                    }
+                                },
+                                {
+                                    "name": "envoy.filters.http.router",
+                                    "typedConfig": {
+                                        "@type": "type.googleapis.com/envoy.extensions.filters.http.router.v3.Router"
+                                    }
+                                }
+                            ],
+                            "tracing": {
+                                "clientSampling": {
+                                    "value": 100
+                                },
+                                "randomSampling": {
+                                    "value": 1
+                                },
+                                "overallSampling": {
+                                    "value": 100
+                                },
+                                "customTags": [
+                                    {
+                                        "tag": "istio.authorization.dry_run.allow_policy.name",
+                                        "metadata": {
+                                            "kind": {
+                                                "request": {}
+                                            },
+                                            "metadataKey": {
+                                                "key": "envoy.filters.http.rbac",
+                                                "path": [
+                                                    {
+                                                        "key": "istio_dry_run_allow_shadow_effective_policy_id"
+                                                    }
+                                                ]
+                                            }
+                                        }
+                                    },
+                                    {
+                                        "tag": "istio.authorization.dry_run.allow_policy.result",
+                                        "metadata": {
+                                            "kind": {
+                                                "request": {}
+                                            },
+                                            "metadataKey": {
+                                                "key": "envoy.filters.http.rbac",
+                                                "path": [
+                                                    {
+                                                        "key": "istio_dry_run_allow_shadow_engine_result"
+                                                    }
+                                                ]
+                                            }
+                                        }
+                                    },
+                                    {
+                                        "tag": "istio.authorization.dry_run.deny_policy.name",
+                                        "metadata": {
+                                            "kind": {
+                                                "request": {}
+                                            },
+                                            "metadataKey": {
+                                                "key": "envoy.filters.http.rbac",
+                                                "path": [
+                                                    {
+                                                        "key": "istio_dry_run_deny_shadow_effective_policy_id"
+                                                    }
+                                                ]
+                                            }
+                                        }
+                                    },
+                                    {
+                                        "tag": "istio.authorization.dry_run.deny_policy.result",
+                                        "metadata": {
+                                            "kind": {
+                                                "request": {}
+                                            },
+                                            "metadataKey": {
+                                                "key": "envoy.filters.http.rbac",
+                                                "path": [
+                                                    {
+                                                        "key": "istio_dry_run_deny_shadow_engine_result"
+                                                    }
+                                                ]
+                                            }
+                                        }
+                                    },
+                                    {
+                                        "tag": "istio.canonical_revision",
+                                        "literal": {
+                                            "value": "v1"
+                                        }
+                                    },
+                                    {
+                                        "tag": "istio.canonical_service",
+                                        "literal": {
+                                            "value": "httpbin"
+                                        }
+                                    },
+                                    {
+                                        "tag": "istio.cluster_id",
+                                        "literal": {
+                                            "value": "Kubernetes"
+                                        }
+                                    },
+                                    {
+                                        "tag": "istio.mesh_id",
+                                        "literal": {
+                                            "value": "example.org"
+                                        }
+                                    },
+                                    {
+                                        "tag": "istio.namespace",
+                                        "literal": {
+                                            "value": "apps"
+                                        }
+                                    }
+                                ]
+                            },
+                            "serverName": "istio-envoy",
+                            "streamIdleTimeout": "0s",
+                            "useRemoteAddress": false,
+                            "forwardClientCertDetails": "APPEND_FORWARD",
+                            "setCurrentClientCertDetails": {
+                                "subject": true,
+                                "dns": true,
+                                "uri": true
+                            },
+                            "proxy100Continue": true,
+                            "upgradeConfigs": [
+                                {
+                                    "upgradeType": "websocket"
+                                }
+                            ],
+                            "normalizePath": true,
+                            "pathWithEscapedSlashesAction": "KEEP_UNCHANGED",
+                            "requestIdExtension": {
+                                "typedConfig": {
+                                    "@type": "type.googleapis.com/envoy.extensions.request_id.uuid.v3.UuidRequestIdConfig",
+                                    "useRequestIdForTraceSampling": true
+                                }
+                            }
+                        }
+                    }
+                ],
+                "transportSocket": {
+                    "name": "envoy.transport_sockets.tls",
+                    "typedConfig": {
+                        "@type": "type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext",
+                        "commonTlsContext": {
+                            "tlsParams": {
+                                "tlsMinimumProtocolVersion": "TLSv1_2",
+                                "tlsMaximumProtocolVersion": "TLSv1_3",
+                                "cipherSuites": [
+                                    "ECDHE-ECDSA-AES256-GCM-SHA384",
+                                    "ECDHE-RSA-AES256-GCM-SHA384",
+                                    "ECDHE-ECDSA-AES128-GCM-SHA256",
+                                    "ECDHE-RSA-AES128-GCM-SHA256",
+                                    "AES256-GCM-SHA384",
+                                    "AES128-GCM-SHA256"
+                                ]
+                            },
+                            "tlsCertificateSdsSecretConfigs": [
+                                {
+                                    "name": "default",
+                                    "sdsConfig": {
+                                        "apiConfigSource": {
+                                            "apiType": "GRPC",
+                                            "transportApiVersion": "V3",
+                                            "grpcServices": [
+                                                {
+                                                    "envoyGrpc": {
+                                                        "clusterName": "sds-grpc"
+                                                    }
+                                                }
+                                            ],
+                                            "setNodeOnFirstMessageOnly": true
+                                        },
+                                        "initialFetchTimeout": "0s",
+                                        "resourceApiVersion": "V3"
+                                    }
+                                }
+                            ],
+                            "combinedValidationContext": {
+                                "defaultValidationContext": {
+                                    "matchSubjectAltNames": [
+                                        {
+                                            "prefix": "spiffe://example.org/"
+                                        }
+                                    ]
+                                },
+                                "validationContextSdsSecretConfig": {
+                                    "name": "ROOTCA",
+                                    "sdsConfig": {
+                                        "apiConfigSource": {
+                                            "apiType": "GRPC",
+                                            "transportApiVersion": "V3",
+                                            "grpcServices": [
+                                                {
+                                                    "envoyGrpc": {
+                                                        "clusterName": "sds-grpc"
+                                                    }
+                                                }
+                                            ],
+                                            "setNodeOnFirstMessageOnly": true
+                                        },
+                                        "initialFetchTimeout": "0s",
+                                        "resourceApiVersion": "V3"
+                                    }
+                                }
+                            },
+                            "alpnProtocols": [
+                                "h2",
+                                "http/1.1"
+                            ]
+                        },
+                        "requireClientCertificate": true
+                    }
+                },
+                "name": "virtualInbound-catchall-http"
+            },
+            {
+                "filterChainMatch": {
+                    "transportProtocol": "raw_buffer",
+                    "applicationProtocols": [
+                        "http/1.1",
+                        "h2c"
+                    ]
+                },
+                "filters": [
+                    {
+                        "name": "istio.metadata_exchange",
+                        "typedConfig": {
+                            "@type": "type.googleapis.com/udpa.type.v1.TypedStruct",
+                            "typeUrl": "type.googleapis.com/envoy.tcp.metadataexchange.config.MetadataExchange",
+                            "value": {
+                                "enable_discovery": true,
+                                "protocol": "istio-peer-exchange"
+                            }
+                        }
+                    },
+                    {
+                        "name": "envoy.filters.network.http_connection_manager",
+                        "typedConfig": {
+                            "@type": "type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager",
+                            "statPrefix": "InboundPassthroughCluster;",
+                            "routeConfig": {
+                                "name": "InboundPassthroughCluster",
+                                "virtualHosts": [
+                                    {
+                                        "name": "inbound|http|0",
+                                        "domains": [
+                                            "*"
+                                        ],
+                                        "routes": [
+                                            {
+                                                "name": "default",
+                                                "match": {
+                                                    "prefix": "/"
+                                                },
+                                                "route": {
+                                                    "cluster": "InboundPassthroughCluster",
+                                                    "timeout": "0s",
+                                                    "retryPolicy": {
+                                                        "retryOn": "reset-before-request",
+                                                        "numRetries": 2
+                                                    },
+                                                    "maxStreamDuration": {
+                                                        "maxStreamDuration": "0s",
+                                                        "grpcTimeoutHeaderMax": "0s"
+                                                    }
+                                                },
+                                                "decorator": {
+                                                    "operation": ":0/*"
+                                                }
+                                            }
+                                        ]
+                                    }
+                                ],
+                                "validateClusters": false
+                            },
+                            "httpFilters": [
+                                {
+                                    "name": "istio.metadata_exchange",
+                                    "typedConfig": {
+                                        "@type": "type.googleapis.com/udpa.type.v1.TypedStruct",
+                                        "typeUrl": "type.googleapis.com/io.istio.http.peer_metadata.Config",
+                                        "value": {
+                                            "downstream_discovery": [
+                                                {
+                                                    "istio_headers": {}
+                                                },
+                                                {
+                                                    "workload_discovery": {}
+                                                }
+                                            ],
+                                            "downstream_propagation": [
+                                                {
+                                                    "istio_headers": {}
+                                                }
+                                            ]
+                                        }
+                                    }
+                                },
+                                {
+                                    "name": "envoy.filters.http.grpc_stats",
+                                    "typedConfig": {
+                                        "@type": "type.googleapis.com/envoy.extensions.filters.http.grpc_stats.v3.FilterConfig",
+                                        "emitFilterState": true,
+                                        "statsForAllMethods": false
+                                    }
+                                },
+                                {
+                                    "name": "envoy.filters.http.fault",
+                                    "typedConfig": {
+                                        "@type": "type.googleapis.com/envoy.extensions.filters.http.fault.v3.HTTPFault"
+                                    }
+                                },
+                                {
+                                    "name": "envoy.filters.http.cors",
+                                    "typedConfig": {
+                                        "@type": "type.googleapis.com/envoy.extensions.filters.http.cors.v3.Cors"
+                                    }
+                                },
+                                {
+                                    "name": "istio.stats",
+                                    "typedConfig": {
+                                        "@type": "type.googleapis.com/stats.PluginConfig",
+                                        "disableHostHeaderFallback": true
+                                    }
+                                },
+                                {
+                                    "name": "envoy.filters.http.router",
+                                    "typedConfig": {
+                                        "@type": "type.googleapis.com/envoy.extensions.filters.http.router.v3.Router"
+                                    }
+                                }
+                            ],
+                            "tracing": {
+                                "clientSampling": {
+                                    "value": 100
+                                },
+                                "randomSampling": {
+                                    "value": 1
+                                },
+                                "overallSampling": {
+                                    "value": 100
+                                },
+                                "customTags": [
+                                    {
+                                        "tag": "istio.authorization.dry_run.allow_policy.name",
+                                        "metadata": {
+                                            "kind": {
+                                                "request": {}
+                                            },
+                                            "metadataKey": {
+                                                "key": "envoy.filters.http.rbac",
+                                                "path": [
+                                                    {
+                                                        "key": "istio_dry_run_allow_shadow_effective_policy_id"
+                                                    }
+                                                ]
+                                            }
+                                        }
+                                    },
+                                    {
+                                        "tag": "istio.authorization.dry_run.allow_policy.result",
+                                        "metadata": {
+                                            "kind": {
+                                                "request": {}
+                                            },
+                                            "metadataKey": {
+                                                "key": "envoy.filters.http.rbac",
+                                                "path": [
+                                                    {
+                                                        "key": "istio_dry_run_allow_shadow_engine_result"
+                                                    }
+                                                ]
+                                            }
+                                        }
+                                    },
+                                    {
+                                        "tag": "istio.authorization.dry_run.deny_policy.name",
+                                        "metadata": {
+                                            "kind": {
+                                                "request": {}
+                                            },
+                                            "metadataKey": {
+                                                "key": "envoy.filters.http.rbac",
+                                                "path": [
+                                                    {
+                                                        "key": "istio_dry_run_deny_shadow_effective_policy_id"
+                                                    }
+                                                ]
+                                            }
+                                        }
+                                    },
+                                    {
+                                        "tag": "istio.authorization.dry_run.deny_policy.result",
+                                        "metadata": {
+                                            "kind": {
+                                                "request": {}
+                                            },
+                                            "metadataKey": {
+                                                "key": "envoy.filters.http.rbac",
+                                                "path": [
+                                                    {
+                                                        "key": "istio_dry_run_deny_shadow_engine_result"
+                                                    }
+                                                ]
+                                            }
+                                        }
+                                    },
+                                    {
+                                        "tag": "istio.canonical_revision",
+                                        "literal": {
+                                            "value": "v1"
+                                        }
+                                    },
+                                    {
+                                        "tag": "istio.canonical_service",
+                                        "literal": {
+                                            "value": "httpbin"
+                                        }
+                                    },
+                                    {
+                                        "tag": "istio.cluster_id",
+                                        "literal": {
+                                            "value": "Kubernetes"
+                                        }
+                                    },
+                                    {
+                                        "tag": "istio.mesh_id",
+                                        "literal": {
+                                            "value": "example.org"
+                                        }
+                                    },
+                                    {
+                                        "tag": "istio.namespace",
+                                        "literal": {
+                                            "value": "apps"
+                                        }
+                                    }
+                                ]
+                            },
+                            "serverName": "istio-envoy",
+                            "streamIdleTimeout": "0s",
+                            "useRemoteAddress": false,
+                            "forwardClientCertDetails": "APPEND_FORWARD",
+                            "setCurrentClientCertDetails": {
+                                "subject": true,
+                                "dns": true,
+                                "uri": true
+                            },
+                            "proxy100Continue": true,
+                            "upgradeConfigs": [
+                                {
+                                    "upgradeType": "websocket"
+                                }
+                            ],
+                            "normalizePath": true,
+                            "pathWithEscapedSlashesAction": "KEEP_UNCHANGED",
+                            "requestIdExtension": {
+                                "typedConfig": {
+                                    "@type": "type.googleapis.com/envoy.extensions.request_id.uuid.v3.UuidRequestIdConfig",
+                                    "useRequestIdForTraceSampling": true
+                                }
+                            }
+                        }
+                    }
+                ],
+                "name": "virtualInbound-catchall-http"
+            },
+            {
+                "filterChainMatch": {
+                    "transportProtocol": "tls",
+                    "applicationProtocols": [
+                        "istio-peer-exchange",
+                        "istio"
+                    ]
+                },
+                "filters": [
+                    {
+                        "name": "istio.metadata_exchange",
+                        "typedConfig": {
+                            "@type": "type.googleapis.com/udpa.type.v1.TypedStruct",
+                            "typeUrl": "type.googleapis.com/envoy.tcp.metadataexchange.config.MetadataExchange",
+                            "value": {
+                                "enable_discovery": true,
+                                "protocol": "istio-peer-exchange"
+                            }
+                        }
+                    },
+                    {
+                        "name": "istio.stats",
+                        "typedConfig": {
+                            "@type": "type.googleapis.com/stats.PluginConfig",
+                            "disableHostHeaderFallback": true
+                        }
+                    },
+                    {
+                        "name": "envoy.filters.network.tcp_proxy",
+                        "typedConfig": {
+                            "@type": "type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy",
+                            "statPrefix": "InboundPassthroughCluster",
+                            "cluster": "InboundPassthroughCluster"
+                        }
+                    }
+                ],
+                "transportSocket": {
+                    "name": "envoy.transport_sockets.tls",
+                    "typedConfig": {
+                        "@type": "type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext",
+                        "commonTlsContext": {
+                            "tlsParams": {
+                                "tlsMinimumProtocolVersion": "TLSv1_2",
+                                "tlsMaximumProtocolVersion": "TLSv1_3",
+                                "cipherSuites": [
+                                    "ECDHE-ECDSA-AES256-GCM-SHA384",
+                                    "ECDHE-RSA-AES256-GCM-SHA384",
+                                    "ECDHE-ECDSA-AES128-GCM-SHA256",
+                                    "ECDHE-RSA-AES128-GCM-SHA256",
+                                    "AES256-GCM-SHA384",
+                                    "AES128-GCM-SHA256"
+                                ]
+                            },
+                            "tlsCertificateSdsSecretConfigs": [
+                                {
+                                    "name": "default",
+                                    "sdsConfig": {
+                                        "apiConfigSource": {
+                                            "apiType": "GRPC",
+                                            "transportApiVersion": "V3",
+                                            "grpcServices": [
+                                                {
+                                                    "envoyGrpc": {
+                                                        "clusterName": "sds-grpc"
+                                                    }
+                                                }
+                                            ],
+                                            "setNodeOnFirstMessageOnly": true
+                                        },
+                                        "initialFetchTimeout": "0s",
+                                        "resourceApiVersion": "V3"
+                                    }
+                                }
+                            ],
+                            "combinedValidationContext": {
+                                "defaultValidationContext": {
+                                    "matchSubjectAltNames": [
+                                        {
+                                            "prefix": "spiffe://example.org/"
+                                        }
+                                    ]
+                                },
+                                "validationContextSdsSecretConfig": {
+                                    "name": "ROOTCA",
+                                    "sdsConfig": {
+                                        "apiConfigSource": {
+                                            "apiType": "GRPC",
+                                            "transportApiVersion": "V3",
+                                            "grpcServices": [
+                                                {
+                                                    "envoyGrpc": {
+                                                        "clusterName": "sds-grpc"
+                                                    }
+                                                }
+                                            ],
+                                            "setNodeOnFirstMessageOnly": true
+                                        },
+                                        "initialFetchTimeout": "0s",
+                                        "resourceApiVersion": "V3"
+                                    }
+                                }
+                            },
+                            "alpnProtocols": [
+                                "istio-peer-exchange",
+                                "h2",
+                                "http/1.1"
+                            ]
+                        },
+                        "requireClientCertificate": true
+                    }
+                },
+                "name": "virtualInbound"
+            },
+            {
+                "filterChainMatch": {
+                    "transportProtocol": "raw_buffer"
+                },
+                "filters": [
+                    {
+                        "name": "istio.metadata_exchange",
+                        "typedConfig": {
+                            "@type": "type.googleapis.com/udpa.type.v1.TypedStruct",
+                            "typeUrl": "type.googleapis.com/envoy.tcp.metadataexchange.config.MetadataExchange",
+                            "value": {
+                                "enable_discovery": true,
+                                "protocol": "istio-peer-exchange"
+                            }
+                        }
+                    },
+                    {
+                        "name": "istio.stats",
+                        "typedConfig": {
+                            "@type": "type.googleapis.com/stats.PluginConfig",
+                            "disableHostHeaderFallback": true
+                        }
+                    },
+                    {
+                        "name": "envoy.filters.network.tcp_proxy",
+                        "typedConfig": {
+                            "@type": "type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy",
+                            "statPrefix": "InboundPassthroughCluster",
+                            "cluster": "InboundPassthroughCluster"
+                        }
+                    }
+                ],
+                "name": "virtualInbound"
+            },
+            {
+                "filterChainMatch": {
+                    "transportProtocol": "tls"
+                },
+                "filters": [
+                    {
+                        "name": "istio.metadata_exchange",
+                        "typedConfig": {
+                            "@type": "type.googleapis.com/udpa.type.v1.TypedStruct",
+                            "typeUrl": "type.googleapis.com/envoy.tcp.metadataexchange.config.MetadataExchange",
+                            "value": {
+                                "enable_discovery": true,
+                                "protocol": "istio-peer-exchange"
+                            }
+                        }
+                    },
+                    {
+                        "name": "istio.stats",
+                        "typedConfig": {
+                            "@type": "type.googleapis.com/stats.PluginConfig",
+                            "disableHostHeaderFallback": true
+                        }
+                    },
+                    {
+                        "name": "envoy.filters.network.tcp_proxy",
+                        "typedConfig": {
+                            "@type": "type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy",
+                            "statPrefix": "InboundPassthroughCluster",
+                            "cluster": "InboundPassthroughCluster"
+                        }
+                    }
+                ],
+                "name": "virtualInbound"
+            },
+            {
+                "filterChainMatch": {
+                    "destinationPort": 80,
+                    "transportProtocol": "tls",
+                    "applicationProtocols": [
+                        "istio",
+                        "istio-peer-exchange",
+                        "istio-http/1.0",
+                        "istio-http/1.1",
+                        "istio-h2"
+                    ]
+                },
+                "filters": [
+                    {
+                        "name": "istio.metadata_exchange",
+                        "typedConfig": {
+                            "@type": "type.googleapis.com/udpa.type.v1.TypedStruct",
+                            "typeUrl": "type.googleapis.com/envoy.tcp.metadataexchange.config.MetadataExchange",
+                            "value": {
+                                "enable_discovery": true,
+                                "protocol": "istio-peer-exchange"
+                            }
+                        }
+                    },
+                    {
+                        "name": "envoy.filters.network.http_connection_manager",
+                        "typedConfig": {
+                            "@type": "type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager",
+                            "statPrefix": "inbound_0.0.0.0_80;",
+                            "routeConfig": {
+                                "name": "inbound|80||",
+                                "virtualHosts": [
+                                    {
+                                        "name": "inbound|http|8000",
+                                        "domains": [
+                                            "*"
+                                        ],
+                                        "routes": [
+                                            {
+                                                "name": "default",
+                                                "match": {
+                                                    "prefix": "/"
+                                                },
+                                                "route": {
+                                                    "cluster": "inbound|80||",
+                                                    "timeout": "0s",
+                                                    "retryPolicy": {
+                                                        "retryOn": "reset-before-request",
+                                                        "numRetries": 2
+                                                    },
+                                                    "maxStreamDuration": {
+                                                        "maxStreamDuration": "0s",
+                                                        "grpcTimeoutHeaderMax": "0s"
+                                                    }
+                                                },
+                                                "decorator": {
+                                                    "operation": "httpbin.apps.svc.cluster.local:8000/*"
+                                                }
+                                            }
+                                        ]
+                                    }
+                                ],
+                                "validateClusters": false
+                            },
+                            "httpFilters": [
+                                {
+                                    "name": "istio.metadata_exchange",
+                                    "typedConfig": {
+                                        "@type": "type.googleapis.com/udpa.type.v1.TypedStruct",
+                                        "typeUrl": "type.googleapis.com/io.istio.http.peer_metadata.Config",
+                                        "value": {
+                                            "downstream_discovery": [
+                                                {
+                                                    "istio_headers": {}
+                                                },
+                                                {
+                                                    "workload_discovery": {}
+                                                }
+                                            ],
+                                            "downstream_propagation": [
+                                                {
+                                                    "istio_headers": {}
+                                                }
+                                            ]
+                                        }
+                                    }
+                                },
+                                {
+                                    "name": "envoy.filters.http.grpc_stats",
+                                    "typedConfig": {
+                                        "@type": "type.googleapis.com/envoy.extensions.filters.http.grpc_stats.v3.FilterConfig",
+                                        "emitFilterState": true,
+                                        "statsForAllMethods": false
+                                    }
+                                },
+                                {
+                                    "name": "envoy.filters.http.fault",
+                                    "typedConfig": {
+                                        "@type": "type.googleapis.com/envoy.extensions.filters.http.fault.v3.HTTPFault"
+                                    }
+                                },
+                                {
+                                    "name": "envoy.filters.http.cors",
+                                    "typedConfig": {
+                                        "@type": "type.googleapis.com/envoy.extensions.filters.http.cors.v3.Cors"
+                                    }
+                                },
+                                {
+                                    "name": "istio.stats",
+                                    "typedConfig": {
+                                        "@type": "type.googleapis.com/stats.PluginConfig",
+                                        "disableHostHeaderFallback": true
+                                    }
+                                },
+                                {
+                                    "name": "envoy.filters.http.router",
+                                    "typedConfig": {
+                                        "@type": "type.googleapis.com/envoy.extensions.filters.http.router.v3.Router"
+                                    }
+                                }
+                            ],
+                            "tracing": {
+                                "clientSampling": {
+                                    "value": 100
+                                },
+                                "randomSampling": {
+                                    "value": 1
+                                },
+                                "overallSampling": {
+                                    "value": 100
+                                },
+                                "customTags": [
+                                    {
+                                        "tag": "istio.authorization.dry_run.allow_policy.name",
+                                        "metadata": {
+                                            "kind": {
+                                                "request": {}
+                                            },
+                                            "metadataKey": {
+                                                "key": "envoy.filters.http.rbac",
+                                                "path": [
+                                                    {
+                                                        "key": "istio_dry_run_allow_shadow_effective_policy_id"
+                                                    }
+                                                ]
+                                            }
+                                        }
+                                    },
+                                    {
+                                        "tag": "istio.authorization.dry_run.allow_policy.result",
+                                        "metadata": {
+                                            "kind": {
+                                                "request": {}
+                                            },
+                                            "metadataKey": {
+                                                "key": "envoy.filters.http.rbac",
+                                                "path": [
+                                                    {
+                                                        "key": "istio_dry_run_allow_shadow_engine_result"
+                                                    }
+                                                ]
+                                            }
+                                        }
+                                    },
+                                    {
+                                        "tag": "istio.authorization.dry_run.deny_policy.name",
+                                        "metadata": {
+                                            "kind": {
+                                                "request": {}
+                                            },
+                                            "metadataKey": {
+                                                "key": "envoy.filters.http.rbac",
+                                                "path": [
+                                                    {
+                                                        "key": "istio_dry_run_deny_shadow_effective_policy_id"
+                                                    }
+                                                ]
+                                            }
+                                        }
+                                    },
+                                    {
+                                        "tag": "istio.authorization.dry_run.deny_policy.result",
+                                        "metadata": {
+                                            "kind": {
+                                                "request": {}
+                                            },
+                                            "metadataKey": {
+                                                "key": "envoy.filters.http.rbac",
+                                                "path": [
+                                                    {
+                                                        "key": "istio_dry_run_deny_shadow_engine_result"
+                                                    }
+                                                ]
+                                            }
+                                        }
+                                    },
+                                    {
+                                        "tag": "istio.canonical_revision",
+                                        "literal": {
+                                            "value": "v1"
+                                        }
+                                    },
+                                    {
+                                        "tag": "istio.canonical_service",
+                                        "literal": {
+                                            "value": "httpbin"
+                                        }
+                                    },
+                                    {
+                                        "tag": "istio.cluster_id",
+                                        "literal": {
+                                            "value": "Kubernetes"
+                                        }
+                                    },
+                                    {
+                                        "tag": "istio.mesh_id",
+                                        "literal": {
+                                            "value": "example.org"
+                                        }
+                                    },
+                                    {
+                                        "tag": "istio.namespace",
+                                        "literal": {
+                                            "value": "apps"
+                                        }
+                                    }
+                                ]
+                            },
+                            "serverName": "istio-envoy",
+                            "streamIdleTimeout": "0s",
+                            "useRemoteAddress": false,
+                            "forwardClientCertDetails": "APPEND_FORWARD",
+                            "setCurrentClientCertDetails": {
+                                "subject": true,
+                                "dns": true,
+                                "uri": true
+                            },
+                            "proxy100Continue": true,
+                            "upgradeConfigs": [
+                                {
+                                    "upgradeType": "websocket"
+                                }
+                            ],
+                            "normalizePath": true,
+                            "pathWithEscapedSlashesAction": "KEEP_UNCHANGED",
+                            "requestIdExtension": {
+                                "typedConfig": {
+                                    "@type": "type.googleapis.com/envoy.extensions.request_id.uuid.v3.UuidRequestIdConfig",
+                                    "useRequestIdForTraceSampling": true
+                                }
+                            }
+                        }
+                    }
+                ],
+                "transportSocket": {
+                    "name": "envoy.transport_sockets.tls",
+                    "typedConfig": {
+                        "@type": "type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext",
+                        "commonTlsContext": {
+                            "tlsParams": {
+                                "tlsMinimumProtocolVersion": "TLSv1_2",
+                                "tlsMaximumProtocolVersion": "TLSv1_3",
+                                "cipherSuites": [
+                                    "ECDHE-ECDSA-AES256-GCM-SHA384",
+                                    "ECDHE-RSA-AES256-GCM-SHA384",
+                                    "ECDHE-ECDSA-AES128-GCM-SHA256",
+                                    "ECDHE-RSA-AES128-GCM-SHA256",
+                                    "AES256-GCM-SHA384",
+                                    "AES128-GCM-SHA256"
+                                ]
+                            },
+                            "tlsCertificateSdsSecretConfigs": [
+                                {
+                                    "name": "default",
+                                    "sdsConfig": {
+                                        "apiConfigSource": {
+                                            "apiType": "GRPC",
+                                            "transportApiVersion": "V3",
+                                            "grpcServices": [
+                                                {
+                                                    "envoyGrpc": {
+                                                        "clusterName": "sds-grpc"
+                                                    }
+                                                }
+                                            ],
+                                            "setNodeOnFirstMessageOnly": true
+                                        },
+                                        "initialFetchTimeout": "0s",
+                                        "resourceApiVersion": "V3"
+                                    }
+                                }
+                            ],
+                            "combinedValidationContext": {
+                                "defaultValidationContext": {
+                                    "matchSubjectAltNames": [
+                                        {
+                                            "prefix": "spiffe://example.org/"
+                                        }
+                                    ]
+                                },
+                                "validationContextSdsSecretConfig": {
+                                    "name": "ROOTCA",
+                                    "sdsConfig": {
+                                        "apiConfigSource": {
+                                            "apiType": "GRPC",
+                                            "transportApiVersion": "V3",
+                                            "grpcServices": [
+                                                {
+                                                    "envoyGrpc": {
+                                                        "clusterName": "sds-grpc"
+                                                    }
+                                                }
+                                            ],
+                                            "setNodeOnFirstMessageOnly": true
+                                        },
+                                        "initialFetchTimeout": "0s",
+                                        "resourceApiVersion": "V3"
+                                    }
+                                }
+                            },
+                            "alpnProtocols": [
+                                "h2",
+                                "http/1.1"
+                            ]
+                        },
+                        "requireClientCertificate": true
+                    }
+                },
+                "name": "0.0.0.0_80"
+            },
+            {
+                "filterChainMatch": {
+                    "destinationPort": 80,
+                    "transportProtocol": "raw_buffer"
+                },
+                "filters": [
+                    {
+                        "name": "istio.metadata_exchange",
+                        "typedConfig": {
+                            "@type": "type.googleapis.com/udpa.type.v1.TypedStruct",
+                            "typeUrl": "type.googleapis.com/envoy.tcp.metadataexchange.config.MetadataExchange",
+                            "value": {
+                                "enable_discovery": true,
+                                "protocol": "istio-peer-exchange"
+                            }
+                        }
+                    },
+                    {
+                        "name": "envoy.filters.network.http_connection_manager",
+                        "typedConfig": {
+                            "@type": "type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager",
+                            "statPrefix": "inbound_0.0.0.0_80;",
+                            "routeConfig": {
+                                "name": "inbound|80||",
+                                "virtualHosts": [
+                                    {
+                                        "name": "inbound|http|8000",
+                                        "domains": [
+                                            "*"
+                                        ],
+                                        "routes": [
+                                            {
+                                                "name": "default",
+                                                "match": {
+                                                    "prefix": "/"
+                                                },
+                                                "route": {
+                                                    "cluster": "inbound|80||",
+                                                    "timeout": "0s",
+                                                    "retryPolicy": {
+                                                        "retryOn": "reset-before-request",
+                                                        "numRetries": 2
+                                                    },
+                                                    "maxStreamDuration": {
+                                                        "maxStreamDuration": "0s",
+                                                        "grpcTimeoutHeaderMax": "0s"
+                                                    }
+                                                },
+                                                "decorator": {
+                                                    "operation": "httpbin.apps.svc.cluster.local:8000/*"
+                                                }
+                                            }
+                                        ]
+                                    }
+                                ],
+                                "validateClusters": false
+                            },
+                            "httpFilters": [
+                                {
+                                    "name": "istio.metadata_exchange",
+                                    "typedConfig": {
+                                        "@type": "type.googleapis.com/udpa.type.v1.TypedStruct",
+                                        "typeUrl": "type.googleapis.com/io.istio.http.peer_metadata.Config",
+                                        "value": {
+                                            "downstream_discovery": [
+                                                {
+                                                    "istio_headers": {}
+                                                },
+                                                {
+                                                    "workload_discovery": {}
+                                                }
+                                            ],
+                                            "downstream_propagation": [
+                                                {
+                                                    "istio_headers": {}
+                                                }
+                                            ]
+                                        }
+                                    }
+                                },
+                                {
+                                    "name": "envoy.filters.http.grpc_stats",
+                                    "typedConfig": {
+                                        "@type": "type.googleapis.com/envoy.extensions.filters.http.grpc_stats.v3.FilterConfig",
+                                        "emitFilterState": true,
+                                        "statsForAllMethods": false
+                                    }
+                                },
+                                {
+                                    "name": "envoy.filters.http.fault",
+                                    "typedConfig": {
+                                        "@type": "type.googleapis.com/envoy.extensions.filters.http.fault.v3.HTTPFault"
+                                    }
+                                },
+                                {
+                                    "name": "envoy.filters.http.cors",
+                                    "typedConfig": {
+                                        "@type": "type.googleapis.com/envoy.extensions.filters.http.cors.v3.Cors"
+                                    }
+                                },
+                                {
+                                    "name": "istio.stats",
+                                    "typedConfig": {
+                                        "@type": "type.googleapis.com/stats.PluginConfig",
+                                        "disableHostHeaderFallback": true
+                                    }
+                                },
+                                {
+                                    "name": "envoy.filters.http.router",
+                                    "typedConfig": {
+                                        "@type": "type.googleapis.com/envoy.extensions.filters.http.router.v3.Router"
+                                    }
+                                }
+                            ],
+                            "tracing": {
+                                "clientSampling": {
+                                    "value": 100
+                                },
+                                "randomSampling": {
+                                    "value": 1
+                                },
+                                "overallSampling": {
+                                    "value": 100
+                                },
+                                "customTags": [
+                                    {
+                                        "tag": "istio.authorization.dry_run.allow_policy.name",
+                                        "metadata": {
+                                            "kind": {
+                                                "request": {}
+                                            },
+                                            "metadataKey": {
+                                                "key": "envoy.filters.http.rbac",
+                                                "path": [
+                                                    {
+                                                        "key": "istio_dry_run_allow_shadow_effective_policy_id"
+                                                    }
+                                                ]
+                                            }
+                                        }
+                                    },
+                                    {
+                                        "tag": "istio.authorization.dry_run.allow_policy.result",
+                                        "metadata": {
+                                            "kind": {
+                                                "request": {}
+                                            },
+                                            "metadataKey": {
+                                                "key": "envoy.filters.http.rbac",
+                                                "path": [
+                                                    {
+                                                        "key": "istio_dry_run_allow_shadow_engine_result"
+                                                    }
+                                                ]
+                                            }
+                                        }
+                                    },
+                                    {
+                                        "tag": "istio.authorization.dry_run.deny_policy.name",
+                                        "metadata": {
+                                            "kind": {
+                                                "request": {}
+                                            },
+                                            "metadataKey": {
+                                                "key": "envoy.filters.http.rbac",
+                                                "path": [
+                                                    {
+                                                        "key": "istio_dry_run_deny_shadow_effective_policy_id"
+                                                    }
+                                                ]
+                                            }
+                                        }
+                                    },
+                                    {
+                                        "tag": "istio.authorization.dry_run.deny_policy.result",
+                                        "metadata": {
+                                            "kind": {
+                                                "request": {}
+                                            },
+                                            "metadataKey": {
+                                                "key": "envoy.filters.http.rbac",
+                                                "path": [
+                                                    {
+                                                        "key": "istio_dry_run_deny_shadow_engine_result"
+                                                    }
+                                                ]
+                                            }
+                                        }
+                                    },
+                                    {
+                                        "tag": "istio.canonical_revision",
+                                        "literal": {
+                                            "value": "v1"
+                                        }
+                                    },
+                                    {
+                                        "tag": "istio.canonical_service",
+                                        "literal": {
+                                            "value": "httpbin"
+                                        }
+                                    },
+                                    {
+                                        "tag": "istio.cluster_id",
+                                        "literal": {
+                                            "value": "Kubernetes"
+                                        }
+                                    },
+                                    {
+                                        "tag": "istio.mesh_id",
+                                        "literal": {
+                                            "value": "example.org"
+                                        }
+                                    },
+                                    {
+                                        "tag": "istio.namespace",
+                                        "literal": {
+                                            "value": "apps"
+                                        }
+                                    }
+                                ]
+                            },
+                            "serverName": "istio-envoy",
+                            "streamIdleTimeout": "0s",
+                            "useRemoteAddress": false,
+                            "forwardClientCertDetails": "APPEND_FORWARD",
+                            "setCurrentClientCertDetails": {
+                                "subject": true,
+                                "dns": true,
+                                "uri": true
+                            },
+                            "proxy100Continue": true,
+                            "upgradeConfigs": [
+                                {
+                                    "upgradeType": "websocket"
+                                }
+                            ],
+                            "normalizePath": true,
+                            "pathWithEscapedSlashesAction": "KEEP_UNCHANGED",
+                            "requestIdExtension": {
+                                "typedConfig": {
+                                    "@type": "type.googleapis.com/envoy.extensions.request_id.uuid.v3.UuidRequestIdConfig",
+                                    "useRequestIdForTraceSampling": true
+                                }
+                            }
+                        }
+                    }
+                ],
+                "name": "0.0.0.0_80"
+            }
+        ],
+        "listenerFilters": [
+            {
+                "name": "envoy.filters.listener.original_dst",
+                "typedConfig": {
+                    "@type": "type.googleapis.com/envoy.extensions.filters.listener.original_dst.v3.OriginalDst"
+                }
+            },
+            {
+                "name": "envoy.filters.listener.tls_inspector",
+                "typedConfig": {
+                    "@type": "type.googleapis.com/envoy.extensions.filters.listener.tls_inspector.v3.TlsInspector",
+                    "initialReadBufferSize": 512
+                },
+                "filterDisabled": {
+                    "destinationPortRange": {
+                        "start": 15006,
+                        "end": 15007
+                    }
+                }
+            },
+            {
+                "name": "envoy.filters.listener.http_inspector",
+                "typedConfig": {
+                    "@type": "type.googleapis.com/envoy.extensions.filters.listener.http_inspector.v3.HttpInspector"
+                },
+                "filterDisabled": {
+                    "orMatch": {
+                        "rules": [
+                            {
+                                "destinationPortRange": {
+                                    "start": 80,
+                                    "end": 81
+                                }
+                            },
+                            {
+                                "destinationPortRange": {
+                                    "start": 15006,
+                                    "end": 15007
+                                }
+                            }
+                        ]
+                    }
+                }
+            }
+        ],
+        "listenerFiltersTimeout": "0s",
+        "continueOnListenerFiltersTimeout": true,
+        "trafficDirection": "INBOUND",
+        "maxConnectionsToAcceptPerSocketEvent": 1
+    }
+]

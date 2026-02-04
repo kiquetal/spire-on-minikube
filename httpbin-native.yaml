@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: httpbin
+  namespace: apps
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: httpbin
+      version: v1
+  template:
+    metadata:
+      labels:
+        app: httpbin
+        version: v1
+        spiffe.io/spire-managed-identity: "true"
+      annotations:
+        sidecar.istio.io/inject: "true"
+        # 1. Mount the SPIRE Socket (Identity)
+        # 2. Mount the Trust Bundle (Trust) - OVERRIDING the default Istio path
+        sidecar.istio.io/userVolume: |
+          [
+            {"name":"workload-socket", "csi":{"driver":"csi.spiffe.io", "readOnly":true}},
+            {"name":"spire-root-override", "configMap":{"name":"spire-bundle"}}
+          ]
+        sidecar.istio.io/userVolumeMount: |
+          [
+            {"name":"workload-socket", "mountPath":"/run/secrets/workload-spiffe-uds", "readOnly":true},
+            {"name":"spire-root-override", "mountPath":"/var/run/secrets/istio", "readOnly":true}
+          ]
+    spec:
+      serviceAccountName: httpbin
+      containers:
+      - image: docker.io/kennethreitz/httpbin
+        imagePullPolicy: IfNotPresent
+        name: httpbin
+        ports:
+        - containerPort: 80

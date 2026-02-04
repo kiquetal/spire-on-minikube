@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sleep-admin
+  namespace: istio-ingress
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sleep-admin
+  namespace: istio-ingress
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sleep-admin
+  template:
+    metadata:
+      labels:
+        app: sleep-admin
+        spiffe.io/spire-managed-identity: "true"
+      annotations:
+        sidecar.istio.io/inject: "true"
+        sidecar.istio.io/userVolume: |
+          [{"name":"workload-socket", "csi":{"driver":"csi.spiffe.io", "readOnly":true}}, {"name":"spire-bundle", "configMap":{"name":"spire-bundle"}}]
+        sidecar.istio.io/userVolumeMount: |
+          [{"name":"workload-socket", "mountPath":"/run/secrets/workload-spiffe-uds", "readOnly":true}, {"name":"spire-bundle", "mountPath":"/var/run/secrets/istio", "readOnly":true}]
+    spec:
+      serviceAccountName: sleep-admin
+      containers:
+      - name: sleep
+        image: curlimages/curl
+        command: ["/bin/sleep", "3650d"]

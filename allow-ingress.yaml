@@ -1,0 +1,19 @@
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-ingress-gateway
+  namespace: apps
+spec:
+  selector:
+    matchLabels:
+      app: httpbin
+  action: ALLOW
+  rules:
+  - from:
+    - source:
+        principals:
+        # We explicitly trust the Gateway's SPIRE ID
+        - "spiffe://example.org/ns/istio-ingress/sa/istio-ingress"
+        # We also keep trusting internal apps (like sleep)
+        - "spiffe://example.org/ns/apps/sa/sleep"
+        - "cluster.local/ns/apps/sa/sleep" # Fallback if needed

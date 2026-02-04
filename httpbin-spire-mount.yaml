@@ -1,0 +1,13 @@
+spec:
+  template:
+    spec:
+      volumes:
+        - name: spire-bundle
+          configMap:
+            name: spire-bundle
+      containers:
+        - name: istio-proxy
+          volumeMounts:
+            - name: spire-bundle
+              mountPath: /var/run/secrets/istio
+              readOnly: true
