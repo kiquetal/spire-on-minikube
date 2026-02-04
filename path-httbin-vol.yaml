@@ -1,8 +1,0 @@
-spec:
-  template:
-    metadata:
-      annotations:
-        # Define the Volume (The ConfigMap we created)
-        sidecar.istio.io/userVolume: '[{"name":"spire-bundle", "configMap":{"name":"spire-bundle"}}]'
-        # Define the Mount (Where to put it in the Sidecar)
-        sidecar.istio.io/userVolumeMount: '[{"name":"spire-bundle", "mountPath":"/var/run/secrets/spire-bundle", "readOnly":true}]'

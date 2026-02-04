@@ -19,7 +19,7 @@ minikube start --kubernetes-version=v1.30.0 --cpus=4 --memory=8192 --driver=dock
 
 ## Step 2: Install Istio
 
-We will use Helm to install Istio components (Base, Istiod, and Ingress Gateway) separately, which is the recommended production approach.
+We will use Helm to install Istio components (Base, Istiod, and Ingress Gateway) separately.
 
 ```bash
 # Add Istio Helm repo
@@ -29,11 +29,14 @@ helm repo update
 # 1. Install Istio Base (CRDs)
 helm install istio-base istio/base -n istio-system --create-namespace
 
-# 2. Install Istiod (Control Plane)
-helm install istiod istio/istiod -n istio-system --wait
+# 2. Install Istiod (Control Plane) with SPIRE integration
+helm install istiod istio/istiod -n istio-system --wait -f istio-spire-values.yaml
 
 # 3. Install Istio Ingress Gateway
 helm install istio-ingress istio/gateway -n istio-ingress --create-namespace --wait
+
+# 4. Patch Ingress Gateway for SPIRE Trust
+kubectl apply -f ingress-spire-patch.yaml
 
 # Label the default namespace for injection
 kubectl label namespace default istio-injection=enabled
@@ -49,61 +52,22 @@ helm repo add spiffe https://spiffe.github.io/helm-charts-hardened/
 helm repo update
 
 # Install SPIRE CRDs
-helm install spire-crds spiffe/spire-crds --namespace spire-server --create-namespace
-
-# Install SPIRE (Server and Agent) with CSI driver enabled
-```
-
-helm upgrade --install -n spire-server spire-crds spiffe/spire-crds --create-namespace
-spire-values.yaml
-
-0.4.0 for 0.26
-
-
 helm upgrade --install spire-crds spiffe/spire-crds \
   --namespace spire-server \
   --create-namespace \
   --version 0.4.0 \
   --wait
 
-
+# Install SPIRE (Server and Agent) with CSI driver enabled
 helm upgrade --install spire spiffe/spire \
   --namespace spire-server \
   --version 0.26.0 \
   -f spire-values.yaml \
   --wait
-
-```
-global:
-  spire:
-    # Explicitly set the trust domain
-    trustDomain: "example.org"
-
-spire-agent:
-  csi:
-    enabled: true
-    driverClass: "csi.spiffe.io"
-
-# This section fixes the "wrong type" crash by explicitely defining the config
-spire-server:
-  controllerManager:
-    enabled: true
-    serviceAccount:
-      create: true
-      name: spire-controller-manager
-    # We define this to satisfy the template logic
-    identities:
-      clusterSPIFFEIDs:
-        enabled: true
-
-
 ```
 
-
-### Following the instructions from documentation
-
-```
-
+### Register Cluster SPIFFE ID
+```bash
 kubectl apply -f - <<EOF
 apiVersion: spire.spiffe.io/v1alpha1
 kind: ClusterSPIFFEID
@@ -115,11 +79,7 @@ spec:
     - "k8s:ns:istio-system"
     - "k8s:sa:istio-ingress"
 EOF
-
-
 ```
-
-
 
 ## Step 4: Verify Installation
 
@@ -130,66 +90,26 @@ kubectl get pods -n istio-ingress
 kubectl get pods -n spire-server
 ```
 
-### Create a Registration Entry
-To allow a workload to obtain a SPIFFE ID, create an entry in the SPIRE Server. This example targets a specific workload with the label `app: frontend`.
+## Step 5: Deploy HttpBin (SPIRE Enabled)
+
+Deploy the `httpbin` sample application. This manifest includes the necessary annotations and Envoy filters to trust SPIRE.
 
 ```bash
-# Get SPIRE Server pod
-SPIRE_SERVER=$(kubectl get pods -n spire-server -l app.kubernetes.io/component=server -o jsonpath='{.items[0].metadata.name}')
-
-# Example: Create an entry for the 'frontend' workload
-# Requires: namespace 'default', service account 'default', AND pod label 'app: frontend'
-kubectl exec -n spire-server $SPIRE_SERVER -- \
-  /opt/spire/bin/spire-server entry create \
-  -spiffeID spiffe://example.org/ns/default/sa/default/frontend \
-  -parentID spiffe://example.org/ns/spire-server/sa/spire-agent \
-  -selector k8s:ns:default \
-  -selector k8s:sa:default \
-  -selector k8s:pod-label:app:frontend
-```
-
-
-#### Check from spire-server
-
-kubectl exec -n spire-server $SPIRE_SERVER -c spire-server -- /opt/spire/bin/spire-server agent list
-
-
-### Understanding SPIRE Selectors
-SPIRE uses **selectors** to attest (verify) the identity of a workload. The `k8s` prefix indicates the [Kubernetes Workload Attestor](https://github.com/spiffe/spire/blob/main/doc/plugin_agent_workloadattestor_k8s.md).
-
-Common selectors include:
-
-| Selector | Description | Example |
-| :--- | :--- | :--- |
-| `k8s:ns` | Namespace of the pod | `k8s:ns:default` |
-| `k8s:sa` | Service Account of the pod | `k8s:sa:my-sa` |
-| `k8s:pod-label` | Label on the Pod | `k8s:pod-label:app:frontend` |
-| `k8s:container-name` | Name of the container | `k8s:container-name:istio-proxy` |
-| `k8s:node-name` | Node where the pod runs | `k8s:node-name:minikube` |
-
-## Step 5: Deploy httpbin
-
-Deploy the `httpbin` sample application and verify that it receives a SPIFFE ID from SPIRE.
-
-```bash
-# 1. Ensure the namespace is labeled for Istio injection
-kubectl label namespace default istio-injection=enabled --overwrite
+# 1. Create apps namespace and label it
+kubectl create ns apps || true
+kubectl label namespace apps istio-injection=enabled --overwrite
 
 # 2. Deploy httpbin
-kubectl apply -f https://raw.githubusercontent.com/istio/istio/master/samples/httpbin/httpbin.yaml
+kubectl apply -f httpbin-spire.yaml
 
-# 3. Create SPIRE registration entry for httpbin
-# Get SPIRE Server pod if not already set
-SPIRE_SERVER=$(kubectl get pods -n spire-server -l app.kubernetes.io/component=server -o jsonpath='{.items[0].metadata.name}')
-
-kubectl exec -n spire-server $SPIRE_SERVER -- \
-  /opt/spire/bin/spire-server entry create \
-  -spiffeID spiffe://example.org/ns/default/sa/httpbin \
-  -parentID spiffe://example.org/ns/spire-server/sa/spire-agent \
-  -selector k8s:ns:default \
-  -selector k8s:sa:httpbin
+# 3. Register HttpBin with SPIRE
+# You can use the provided script:
+chmod +x register-httpbin.sh
+./register-httpbin.sh
 ```
 
-#### reset level
+## Step 6: Test Sleep Client
 
-./istio-1.28.3/bin/istioctl proxy-config log $INGRESS_POD -n istio-ingress --level info
+```bash
+kubectl apply -f sleep-spire.yaml
+```

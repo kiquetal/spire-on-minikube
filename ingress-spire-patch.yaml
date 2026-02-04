@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: istio-ingress
+  namespace: istio-ingress
+spec:
+  template:
+    metadata:
+      labels:
+        # Trigger SPIRE registration
+        spiffe.io/spire-managed-identity: "true"
+      annotations:
+        # CRITICAL: Tell Istio/Envoy to use the SPIRE bundle as a Trust Root
+        proxy.istio.io/config: |
+          caCertificatesPem:
+          - "/var/run/secrets/spire-bundle/root-cert.pem"
+        # Inject the volumes via sidecar annotations (standard Istio mechanism)
+        sidecar.istio.io/userVolume: '[{"name":"workload-socket","csi":{"driver":"csi.spiffe.io","readOnly":true}},{"name":"spire-bundle","configMap":{"name":"spire-bundle"}}]'
+        sidecar.istio.io/userVolumeMount: '[{"name":"workload-socket","mountPath":"/run/secrets/workload-spiffe-uds","readOnly":true},{"name":"spire-bundle","mountPath":"/var/run/secrets/spire-bundle","readOnly":true}]'
+    spec:
+      containers:
+      - name: istio-proxy
+        # Ensure environment uses the SPIRE socket
+        env:
+        - name: ISTIO_META_WORKLOAD_SOCKET_PATH
+          value: "/run/secrets/workload-spiffe-uds/socket"
+        # Manual volume mounts in case sidecar injection doesn't apply to Gateway deployment automatically
+        volumeMounts:
+        - name: workload-socket
+          mountPath: "/run/secrets/workload-spiffe-uds"
+          readOnly: true
+        - name: spire-bundle
+          mountPath: "/var/run/secrets/spire-bundle"
+          readOnly: true
+      volumes:
+      - name: workload-socket
+        csi:
+          driver: csi.spiffe.io
+          readOnly: true
+      - name: spire-bundle
+        configMap:
+          name: spire-bundle
