@@ -1,6 +1,11 @@
 # istio-spire-values.yaml
 meshConfig:
   trustDomain: "example.org" # Make sure this matches your SPIRE trust domain
+  defaultConfig:
+    # This instructs Envoy globally to use this CA bundle for validation,
+    # potentially removing the need for the per-service EnvoyFilter.
+    caCertificatesPem:
+      - /var/run/secrets/spire-bundle/root-cert.pem
 
 sidecarInjectorWebhook:
   templates:
@@ -12,8 +17,14 @@ sidecarInjectorWebhook:
           - name: workload-socket
             mountPath: /run/secrets/workload-spiffe-uds
             readOnly: true
+          - name: spire-bundle
+            mountPath: /var/run/secrets/spire-bundle
+            readOnly: true
         volumes:
           - name: workload-socket
             csi:
               driver: "csi.spiffe.io"
               readOnly: true
+          - name: spire-bundle
+            configMap:
+              name: spire-bundle
