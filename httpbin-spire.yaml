@@ -17,13 +17,8 @@ spec:
         # Trigger SPIRE Identity
         spiffe.io/spire-managed-identity: "true"
       annotations:
-        # 1. Inject the Sidecar + SPIRE Socket
+        # Inject the Sidecar + SPIRE Socket using the 'spire' template from istio-spire-values.yaml
         inject.istio.io/templates: "sidecar,spire"
-        
-        # 2. MOUNT THE TRUST BUNDLE (The "Manual Trust Fix")
-        # This tells Istio: "Please mount the 'spire-bundle' ConfigMap to /var/run/secrets/spire-bundle"
-        sidecar.istio.io/userVolume: '[{"name":"spire-bundle", "configMap":{"name":"spire-bundle"}}]'
-        sidecar.istio.io/userVolumeMount: '[{"name":"spire-bundle", "mountPath":"/var/run/secrets/spire-bundle", "readOnly":true}]'
     spec:
       serviceAccountName: httpbin
       containers:
@@ -32,31 +27,3 @@ spec:
         name: httpbin
         ports:
         - containerPort: 80
-
----
-apiVersion: networking.istio.io/v1alpha3
-kind: EnvoyFilter
-metadata:
-  name: httpbin-trust-spire
-  namespace: apps
-spec:
-  workloadSelector:
-    labels:
-      app: httpbin
-  configPatches:
-  - applyTo: FILTER_CHAIN
-    match:
-      context: SIDECAR_INBOUND
-      listener:
-        portNumber: 15006
-    patch:
-      operation: MERGE
-      value:
-        transport_socket:
-          name: envoy.transport_sockets.tls
-          typed_config:
-            "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
-            common_tls_context:
-              validation_context:
-                trusted_ca:
-                  filename: "/var/run/secrets/spire-bundle/root-cert.pem"
