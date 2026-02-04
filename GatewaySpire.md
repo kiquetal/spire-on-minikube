@@ -59,6 +59,16 @@ spec:
       - name: spire-bundle
         configMap:
           name: spire-bundle
+```
+
+## Applying the Patch
+
+To apply the configuration and ensure the Ingress Gateway picks up the changes:
+
+```bash
+kubectl apply -f ingress-spire-patch.yaml
+kubectl rollout restart deployment istio-ingress -n istio-ingress
+```
 
 ## Relationship to Sidecar Injection
 
@@ -68,4 +78,3 @@ While the Ingress Gateway requires a manual patch (or a custom gateway template)
 1. **Consistency**: Both the Gateway and the Sidecars must point to the same SPIRE socket and trust the same root CA bundle to establish a unified identity mesh.
 2. **Bootstrapping**: The Gateway is often deployed via its own Helm chart (`istio/gateway`), which doesn't automatically inherit the custom sidecar templates. The patch bridges this gap.
 3. **Trust Validation**: Without the `caCertificatesPem` configuration (provided globally in `meshConfig` or locally in the Gateway patch), Envoy would attempt to validate identities against Istio's default CA (istiod) instead of SPIRE, leading to connection resets.
-```
