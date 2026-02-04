@@ -1,122 +1,80 @@
-# Keycloak 25+ Integration with SPIFFE/SPIRE
+# Keycloak 26+ Integration with SPIFFE/SPIRE
 
-This guide details the cleanest method to authenticate SPIFFE-identified workloads against Keycloak using the native **Federated Client Authentication** feature available in Keycloak 25+.
+This guide details the **stable and modern** method to authenticate SPIFFE-identified workloads against Keycloak 26+ without relying on preview features. It uses **OAuth 2.0 Token Exchange (RFC 8693)**, which is stable as of Keycloak 26.2.
 
-## Prerequisites
+## Core Strategy: Token Exchange
+Instead of treating every SPIFFE ID as a "Client", we treat the SPIRE Trust Domain as an **Identity Provider**. 
 
-*   **Keycloak 25+** running with the `token-exchange` and `admin-fine-grained-authz` features enabled (often required for advanced federation, though basic SPIFFE support might be enabled by default in newer builds).
-*   **SPIRE** configured with the OIDC Discovery Provider enabled.
-*   **Ingress/Network:** Keycloak must be able to reach the SPIRE OIDC Discovery endpoint (e.g., `https://spire-server:8443/.well-known/openid-configuration`).
+**Key Concept:** You use **one** Keycloak Client (a "bridge") to exchange many different SPIFFE identities. 
+1. Workloads fetch a unique **SPIFFE JWT** from the local SPIRE agent.
+2. Workloads send this JWT as a "Proof of Identity" to Keycloak using a shared `client_id`.
+3. Keycloak validates the SPIFFE identity and returns a **Keycloak Access Token** representing that specific workload.
 
-## 1. Configure SPIRE OIDC Discovery
+## 1. Prerequisites
 
-Ensure SPIRE is serving its JWKS. In your `server.conf`:
+*   **Keycloak 26.2+** (Token Exchange is stable).
+*   **SPIRE** with OIDC Discovery Provider enabled.
+*   **Trust:** Keycloak must trust the CA that signed the SPIRE OIDC TLS certificate (or be configured to skip verification in development).
 
-```hcl
-server {
-    # ...
-    jwt_issuer = "https://spire-server" # The issuer string in the JWT
-    
-    # Enable the OIDC discovery endpoint
-    experimental {
-        feature_flags = ["oidc_discovery_provider"]
-    }
-}
-```
+## 2. Keycloak Configuration (The "Easy" Way)
 
-## 2. Configure Keycloak
+### A. Add SPIRE as an Identity Provider
+This is how you "Trust the Domain" globally.
 
-### A. Add SPIFFE Identity Provider
-Instead of registering a simple OIDC provider, Keycloak 25+ has specific support for SPIFFE.
+1.  Go to **Identity Providers** -> **Add provider** -> **OpenID Connect v1.0**.
+2.  **Alias:** `spire`
+3.  **Display Name:** `SPIRE Trust Domain`
+4.  **Discovery Endpoint:** `https://spire-oidc-provider:8443/.well-known/openid-configuration` (or `http://...` in development to skip TLS requirements).
+5.  **Trust Domain Validation:** Keycloak will automatically trust tokens where the `iss` (Issuer) matches this discovery endpoint. This effectively trusts your entire SPIFFE domain.
+6.  **Client ID / Secret:** Use dummy values (e.g., `spire-idp` / `none`) as we are only using this for token validation, not for the authorization code flow.
 
-1.  Go to **Identity Providers**.
-2.  Select **SPIFFE** (if available) or **OpenID Connect v1.0**.
-    *   *Note:* If a native "SPIFFE" option isn't visible, use the standard **OpenID Connect** provider. Keycloak's "Federated Client Authentication" works by linking a client to an external issuer.
-3.  **Alias:** `spire-oidc`
-4.  **Discovery Endpoint:** `https://spire-oidc-service:8443/.well-known/openid-configuration`
-    *   *Important:* Keycloak needs to trust the CA that signed the SPIRE OIDC TLS certificate. You may need to add the SPIRE CA to Keycloak's truststore.
-5.  **Client Authentication:** `client_secret_post` (This is how Keycloak talks to SPIRE, not how your app talks to Keycloak. SPIRE's OIDC endpoint is usually public, so this might be irrelevant or dummy values).
+### B. Configure the Application Client
+Create a single client representing your application tier (e.g., your microservices).
 
-### B. Register the Client
-This is the "Cleanest" way. You create **ONE** Keycloak Client representing your logical application or service tier.
+1.  **Client ID:** `my-app-tier`
+2.  **Capability Config:** Enable **Client authentication** and **Service accounts roles**.
+3.  **Token Exchange Permission:**
+    *   Go to the **Permissions** tab for this client.
+    *   Enable **Permissions**.
+    *   Click on **token-exchange** and create a policy that allows the `my-app-tier` client to exchange tokens from the `spire` identity provider.
 
-1.  **Client ID:** `my-workload-client`
-2.  **Client Authentication:** `On`
-3.  **Authentication Flow:** `Service Accounts Roles` (Client Credentials) enabled.
-4.  **Authentication Method:**
-    *   Go to the **Credentials** tab.
-    *   **Client Authenticator:** Select **Signed Jwt**.
-    *   **Signature Algorithm:** `RS256` (matches SPIRE default).
+## 3. Obtaining the Token (Workload Side)
 
-### C. Link Client to SPIFFE ID (The Magic)
-How do we tell Keycloak that `spiffe://example.org/ns/default/sa/my-app` is allowed to act as `my-workload-client`?
+Your workload uses the `spire-agent` (usually via a sidecar or CSI driver) to get a JWT, then calls Keycloak.
 
-#### Method 1: JWKS URL (Standard RFC 7523)
-If you want a strict 1:1 mapping:
-1.  In Client **Credentials**, set **JWKS URL** to your SPIRE OIDC JWKS endpoint.
-2.  Keycloak will fetch keys from there to validate the signature.
-3.  **Constraint:** The JWT `sub` (Subject) usually must match the Keycloak `client_id`.
-    *   *Issue:* SPIFFE IDs look like URLs (`spiffe://...`), while Keycloak Client IDs are often simple strings.
-    *   *Solution:* You can name your Keycloak Client `spiffe://example.org/ns/default/sa/my-app`. This works but is ugly.
-
-#### Method 2: Federated Client Authentication (Optimized)
-This allows decoupling the SPIFFE ID from the Keycloak Client ID.
-
-1.  Enable **Federated Client Authentication** (if visible as a specific switch or policy in your version).
-2.  Alternatively, use a **Script Mapper** or **Client Policy**:
-    *   Create a **Client Registration Policy** that trusts tokens issued by your `spire-oidc` provider.
-    *   Configure the client to accept **Any** subject signed by that trusted provider, effectively offloading identity proof to the signature.
-
-## 3. Multiple SPIFFE IDs for One Client?
-
-You asked if one Keycloak Client can support different SPIFFE IDs.
-
-**Yes, but it depends on validation strictness.**
-
-### Approach A: The "Subject Match" (Strict)
-*   **Mechanism:** Keycloak expects `JWT.sub == Client.clientId`.
-*   **Result:** You need one Keycloak Client per SPIFFE ID.
-*   **Pros:** Audit logs clearly show which specific SPIFFE ID accessed the system.
-*   **Cons:** Management overhead.
-
-### Approach B: The "Signed JWT" with Certificate/JWKS Trust (Flexible)
-*   **Mechanism:** You configure the Keycloak Client to trust the **Issuer** (SPIRE) and relax the Subject check.
-*   **How:** 
-    *   In modern Keycloak, this is often handled by **Client Policies**. 
-    *   You define a policy: "If JWT is signed by SPIRE (verified via JWKS), allow it to authenticate as Client X *IF* it contains specific claims."
-    *   Currently, without custom extensions, standard Keycloak is strict about `sub` matching `client_id`.
-
-**Recommendation for "Optimization":**
-If you have 5 replicas of a service, they all share the **SAME** SPIFFE ID (`spiffe://.../sa/frontend`). This works perfectly with one Keycloak Client.
-
-If you have *different* services (Frontend, Backend, Worker) that all need to access Keycloak to get tokens:
-1.  **Do NOT share one client.** Create `frontend-client`, `backend-client`, etc.
-2.  Each has its own permissions/scopes.
-3.  This is better security practice.
-
-**If you essentially want "Any valid SPIFFE ID can get a token":**
-You are looking for **Token Exchange**.
-1.  Client: "I am `anonymous` (or a generic public client)".
-2.  Action: "Here is my SPIFFE JWT (Subject Token). Please exchange it for a Keycloak Access Token."
-3.  Keycloak: Validates SPIFFE JWT against the configured Identity Provider (`spire-oidc`).
-4.  Result: Returns a Keycloak Token with the identity mapped from the SPIFFE ID.
-5.  **Benefit:** You don't need to register every SPIFFE ID as a Client. You treat them as "Users" authenticated via the SPIFFE Identity Provider.
-
-## 4. How to Request the Token (Client Side)
-
-Run this from your workload:
+### Step 1: Fetch JWT from SPIRE Agent
+From within your pod/container:
 
 ```bash
-# 1. Get SVID from SPIRE Agent (via Workload API)
-# This usually happens automatically via sidecar, saved to disk or env var.
-# Let's assume we have the JWT in $SPIFFE_JWT
-
-# 2. Call Keycloak
-curl -X POST https://keycloak.example.com/realms/myrealm/protocol/openid-connect/token 
-  -d "client_id=my-workload-client" 
-  -d "client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer" 
-  -d "client_assertion=$SPIFFE_JWT" 
-  -d "grant_type=client_credentials"
+# Fetch a JWT with Keycloak as the audience
+# The SPIRE agent socket is usually at /run/spire/sockets/agent.sock
+export SPIFFE_JWT=$(spire-agent api fetch jwt -audience "https://keycloak.example.com/realms/myrealm" | awk 'NR==2 {print $1}')
 ```
 
-*Note:* If using the **Token Exchange** approach (Identity Provider), the `grant_type` would be `urn:ietf:params:oauth:grant-type:token-exchange`, and `subject_token` would be the SPIFFE JWT.
+### Step 2: Exchange for Keycloak Token
+Exchange the **SPIFFE JWT** (which acts as your proof of identity) for a Keycloak token. Note that `subject_token` is your SPIFFE JWT, and the resulting Keycloak token will carry the identity of your specific SPIFFE ID.
+
+```bash
+curl -X POST https://keycloak.example.com/realms/myrealm/protocol/openid-connect/token \
+  -d "grant_type=urn:ietf:params:oauth:grant-type:token-exchange" \
+  -d "client_id=my-app-tier" \
+  -d "client_secret=YOUR_CLIENT_SECRET" \
+  -d "subject_token=$SPIFFE_JWT" \
+  -d "subject_token_type=urn:ietf:params:oauth:token-type:jwt" \
+  -d "subject_issuer=spire"
+```
+
+The `client_id` provides the **permission** to exchange, while the `$SPIFFE_JWT` provides the **identity**.
+
+## 4. Why this is better
+
+1.  **No Preview Features:** Token Exchange is stable in Keycloak 26.2+. You don't need `--features=preview`.
+2.  **Easy Trust:** You configure the SPIRE OIDC endpoint **once** as an Identity Provider. Any workload with a valid SVID from that domain can now "exist" in Keycloak.
+3.  **Decoupled Identity:** You don't need to register every single SPIFFE ID as a Keycloak Client. You only manage **one client ID** for your entire application tier, while still getting unique tokens for every service account.
+4.  **Standardized:** Uses RFC 8693 (Token Exchange) which is the industry standard for this pattern.
+
+## Troubleshooting
+
+*   **Issuer Mismatch:** Ensure the `jwt_issuer` in SPIRE's `server.conf` matches exactly with the `issuer` in the OIDC Discovery and the Identity Provider config in Keycloak.
+*   **SSL/TLS:** If using self-signed certs for SPIRE OIDC, you MUST import the SPIRE CA into the Keycloak/Java truststore.
+    *   **Development Tip:** In lab environments, you can avoid truststore updates by using `http` for the SPIRE OIDC provider (if exposed) or by setting the Keycloak environment variable `KC_HTTPS_CLIENT_AUTH=none` and relevant Quarkus properties to disable strict hostname/certificate checks if your environment allows it. However, importing the CA is the recommended stable path.
