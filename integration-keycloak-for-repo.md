@@ -3,7 +3,7 @@
 This guide outlines the steps to apply the SPIFFE federated authentication to your Minikube environment using the modified Keycloak configuration.
 
 ## Step 1: Update Keycloak Deployment
-Apply the changes to your `keycloak-for-spiffee.yaml` to include the required features and truststore paths.
+Apply the changes to your `manifest/keycloak-for-spiffee.yaml` to include the required features and truststore paths.
 
 ```yaml
 # Add to environment variables

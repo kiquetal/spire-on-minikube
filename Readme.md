@@ -30,9 +30,9 @@ helm repo update
 helm install istio-base istio/base -n istio-system --create-namespace
 
 # 2. Install Istiod (Control Plane) with SPIRE integration
-helm install istiod istio/istiod -n istio-system --wait -f istio-spire-values.yaml
+helm install istiod istio/istiod -n istio-system --wait -f manifest/istio-spire-values.yaml
 
-### Understanding `istio-spire-values.yaml`
+### Understanding `manifest/istio-spire-values.yaml`
 
 The values provided to Helm configure Istio to integrate natively with SPIRE:
 
@@ -48,7 +48,7 @@ To use this template, workloads must be annotated with `inject.istio.io/template
 helm install istio-ingress istio/gateway -n istio-ingress --create-namespace --wait
 
 # 4. Patch Ingress Gateway for SPIRE Trust
-kubectl apply -f ingress-spire-patch.yaml
+kubectl apply -f manifest/ingress-spire-patch.yaml
 
 # Label the default namespace for injection
 kubectl label namespace default istio-injection=enabled
@@ -74,7 +74,7 @@ helm upgrade --install spire-crds spiffe/spire-crds \
 helm upgrade --install spire spiffe/spire \
   --namespace spire-server \
   --version 0.26.0 \
-  -f spire-values.yaml \
+  -f manifest/spire-values.yaml \
   --wait
 ```
 
@@ -131,9 +131,9 @@ kubectl create ns apps || true
 kubectl label namespace apps istio-injection=enabled --overwrite
 
 # 2. Deploy httpbin
-kubectl apply -f httpbin-spire.yaml
+kubectl apply -f manifest/httpbin-spire.yaml
 
-> **Note**: `httpbin-spire.yaml` uses the `inject.istio.io/templates: "sidecar,spire"` annotation to apply the SPIRE template configured in Step 2.
+> **Note**: `manifest/httpbin-spire.yaml` uses the `inject.istio.io/templates: "sidecar,spire"` annotation to apply the SPIRE template configured in Step 2.
 
 # 3. Verify SPIRE Registration
 # With ClusterSPIFFEID, registration is automatic. Check the SPIRE server:
@@ -143,7 +143,7 @@ kubectl exec -n spire-server spire-server-0 -- /opt/spire/bin/spire-server entry
 ## Step 6: Test Sleep Client
 
 ```bash
-kubectl apply -f sleep-spire.yaml
+kubectl apply -f manifest/sleep-spire.yaml
 ```
 
 

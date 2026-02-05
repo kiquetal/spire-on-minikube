@@ -66,13 +66,13 @@ spec:
 To apply the configuration and ensure the Ingress Gateway picks up the changes:
 
 ```bash
-kubectl apply -f ingress-spire-patch.yaml
+kubectl apply -f manifest/ingress-spire-patch.yaml
 kubectl rollout restart deployment istio-ingress -n istio-ingress
 ```
 
 ## Relationship to Sidecar Injection
 
-While the Ingress Gateway requires a manual patch (or a custom gateway template), standard workloads use the `spire` template defined in `istio-spire-values.yaml`. 
+While the Ingress Gateway requires a manual patch (or a custom gateway template), standard workloads use the `spire` template defined in `manifest/istio-spire-values.yaml`. 
 
 ### Why both are needed:
 1. **Consistency**: Both the Gateway and the Sidecars must point to the same SPIRE socket and trust the same root CA bundle to establish a unified identity mesh.

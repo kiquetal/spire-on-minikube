@@ -2,7 +2,7 @@
 
 To change the cluster name (e.g., from `demo-cluster` to `my-cluster`), you need to update several configuration files to ensure consistency across SPIRE and Istio.
 
-## 1. SPIRE Server Configuration (`spire-values.yaml`)
+## 1. SPIRE Server Configuration (`manifest/spire-values.yaml`)
 
 You need to update the cluster name in two places within the SPIRE configuration: the Node Attestor and the Controller Manager.
 
@@ -32,7 +32,7 @@ spire-server:
     clusterName: "my-cluster" # Add or update this line
 ```
 
-## 2. Istio Configuration (`istio-spire-values.yaml`)
+## 2. Istio Configuration (`manifest/istio-spire-values.yaml`)
 
 Istio needs to know the cluster name for telemetry and multi-cluster identification.
 
@@ -64,10 +64,10 @@ After updating the files, re-apply the Helm charts.
 
 ```bash
 # Update SPIRE
-helm upgrade spire spiffe/spire -n spire-server -f spire-values.yaml
+helm upgrade spire spiffe/spire -n spire-server -f manifest/spire-values.yaml
 
 # Update Istio
-helm upgrade istiod istio/istiod -n istio-system -f istio-spire-values.yaml
+helm upgrade istiod istio/istiod -n istio-system -f manifest/istio-spire-values.yaml
 ```
 
 ## 5. Verification

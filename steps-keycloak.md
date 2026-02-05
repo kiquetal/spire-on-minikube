@@ -7,7 +7,7 @@ This guide walks you through setting up Keycloak 26.5+ to accept SPIFFE IDs (via
 Apply the prepared manifest to deploy Keycloak in the `spire-server` namespace.
 
 ```bash
-kubectl apply -f keycloak-for-spiffee.yaml
+kubectl apply -f manifest/keycloak-for-spiffee.yaml
 ```
 
 Wait for it to become ready:
