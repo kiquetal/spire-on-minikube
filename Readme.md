@@ -31,6 +31,7 @@ helm install istio-base istio/base -n istio-system --create-namespace
 
 # 2. Install Istiod (Control Plane) with SPIRE integration
 helm install istiod istio/istiod -n istio-system --wait -f manifest/istio-spire-values.yaml
+```
 
 ### Understanding `manifest/istio-spire-values.yaml`
 
@@ -44,6 +45,7 @@ The values provided to Helm configure Istio to integrate natively with SPIRE:
 
 To use this template, workloads must be annotated with `inject.istio.io/templates: "sidecar,spire"`.
 
+```bash
 # 3. Install Istio Ingress Gateway
 helm install istio-ingress istio/gateway -n istio-ingress --create-namespace --wait
 
@@ -132,9 +134,11 @@ kubectl label namespace apps istio-injection=enabled --overwrite
 
 # 2. Deploy httpbin
 kubectl apply -f manifest/httpbin-spire.yaml
+```
 
 > **Note**: `manifest/httpbin-spire.yaml` uses the `inject.istio.io/templates: "sidecar,spire"` annotation to apply the SPIRE template configured in Step 2.
 
+```bash
 # 3. Verify SPIRE Registration
 # With ClusterSPIFFEID, registration is automatic. Check the SPIRE server:
 kubectl exec -n spire-server spire-server-0 -- /opt/spire/bin/spire-server entry show -spiffeID spiffe://example.org/ns/apps/sa/httpbin
@@ -146,20 +150,28 @@ kubectl exec -n spire-server spire-server-0 -- /opt/spire/bin/spire-server entry
 kubectl apply -f manifest/sleep-spire.yaml
 ```
 
+### Checking JWT and testing exchange
 
+```bash
+# Since the debug container is plain Ubuntu, download the SPIRE agent binary first:
+kubectl exec -n apps debug-spire -c tools -- bash -c "apt-get update && apt-get install -y wget && wget https://github.com/spiffe/spire/releases/download/v1.11.0/spire-1.11.0-linux-x86_64-glibc.tar.gz && tar -xvf spire-1.11.0-linux-x86_64-glibc.tar.gz -C /tmp --strip-components=2 spire-1.11.0/bin/spire-agent"
 
-### Checking jwt and testing exchange
-
-
-     kubectl exec -n apps debug-spire -c tools -- curl -X POST -s -X POST http://keycloak.spire-server.svc:8080/realms/spire-demo/protocol/openid-connect/token \
-	    -d "grant_type=client_credentials" \
-	    -d "client_id=spiffe://example.org/ns/apps/sa/debug-spire" \
-	    -d "client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-spiffe" \
-	    -d "client_assertion=eyJhbGciOiJSUzI1NiIsImtpZCI6IkhLNXgwU0h3YUFqOXd3bFpNcUJmUkFkekFmRVhFY3hnIiwidHlwIjoiSldUIn0.eyJhdWQiOlsiaHR0cDovL2tleWNsb2FrLnNwaXJlLXNlcnZlci5zdmM6ODA4MC9yZWFsbXMvc3BpcmUtZGVtbyJdLCJleHAiOjE3NzAzMDc3MzUsImlhdCI6MTc3MDMwNDEzNSwiaXNzIjoiaHR0cHM6Ly9vaWRjLWRpc2NvdmVyeS5leGFtcGxlLm9yZyIsInN1YiI6InNwaWZmZTovL2V4YW1wbGUub3JnL25zL2FwcHMvc2EvZGVidWctc3BpcmUifQ.qyYeiiiqOY58G5Wnb34kQPqzTxAaeOYDiHY5YqDyA1TyF9Hfp1W93oHVapZgx55H7K2_mgU33vUN8lWW3z7Qkp_xKqYchcMgRkIrBcsspoNyqpwF6hj2WvovRdF9bXxvjvJhCMqf5sfjs3sVs0-GDSdtH0USbbvJqUszeyIh4UUTesS8qM5RiWvA_GVV_DCG6KjGctIaw5FQbymyUF4-nNmSE7dhmum-HXAkX9j8vCs52Bp8O2i3t-hRvQFp__Er--LaF8kzSlt41tPtix1lv5Pag1hpJ_SpCu4ZCuyWMCSYMFC9np14Wh12y__rEbb0PLppRJuT5-SFZyAXjWOPSQ" | jq .
-
-
-
+# Fetch a JWT from the SPIRE agent
 kubectl exec -n apps debug-spire -c tools -- /tmp/spire-agent api fetch jwt \
        -audience "spire" \
        -socketPath /run/secrets/workload-spiffe-uds/spire-agent.sock 
-  
+
+# Test token exchange with Keycloak
+kubectl exec -n apps debug-spire -c tools -- curl -X POST -s http://keycloak.spire-server.svc:8080/realms/spire-demo/protocol/openid-connect/token \
+    -d "grant_type=client_credentials" \
+    -d "client_id=spiffe://example.org/ns/apps/sa/debug-spire" \
+    -d "client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-spiffe" \
+    -d "client_assertion=$(kubectl exec -n apps debug-spire -c tools -- /tmp/spire-agent api fetch jwt -audience "http://keycloak.spire-server.svc:8080/realms/spire-demo" -socketPath /run/secrets/workload-spiffe-uds/spire-agent.sock -format json | jq -r '.token')" | jq .
+```
+
+### Useful commands for SPIRE Server
+
+```bash
+# List all registration entries
+kubectl exec -n spire-server spire-server-0 -- /opt/spire/bin/spire-server entry show
+```

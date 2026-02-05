@@ -38,7 +38,7 @@ Federation allows these two distinct authorities to "shake hands" and exchange p
 
 ## 1. Do I need the "SPIRE Component"?
 
-**Yes.** To achieve the setup above, you need specific SPIRE components:
+**Yes.** To achieve the setup above, you need specific SPIRE components and configurations:
 
 1.  **SPIRE Server & Agent:** The core infrastructure to issue identities.
 2.  **SPIRE Federation Config (CRDs):**
@@ -64,6 +64,39 @@ Federation allows these two distinct authorities to "shake hands" and exchange p
         type: "https_spiffe"
         endpointSpiffeId: "spiffe://beta.com/spire/server"
     ```
+
+3.  **Workload-Specific Federation (`federatesWith`):**
+    Simply configuring the servers to talk to each other is not enough. You must explicitly tell SPIRE which workloads are allowed to federate. 
+
+    If using the **SPIRE Controller Manager**, you add the `federatesWith` field to your `ClusterSPIFFEID`. This triggers SPIRE to push the foreign trust bundle (e.g., Cluster B's Root CA) to that specific workload.
+
+    ```yaml
+    apiVersion: spire.spiffe.io/v1alpha1
+    kind: ClusterSPIFFEID
+    metadata:
+      name: istio-sidecar-federated
+    spec:
+      spiffeIDTemplate: "spiffe://{{ .TrustDomain }}/ns/{{ .PodMeta.Namespace }}/sa/{{ .PodSpec.ServiceAccountName }}"
+      podSelector:
+        matchLabels:
+          spiffe.io/spire-managed-identity: "true"
+      # CRITICAL: This workload will now receive the beta.com trust bundle
+      federatesWith:
+        - beta.com
+    ```
+
+4.  **SPIRE Agent SDS Configuration:**
+    For Envoy to actually receive these federated bundles through Istio, the SPIRE Agent must be configured to expose them via the SDS API. In the `spire-agent.conf` (or via Helm values), ensure these are set:
+
+    ```hcl
+    workload_api {
+      # ...
+    }
+    # This allows Envoy to request 'spiffe://alpha.com' or 'beta.com' via SDS
+    append_jwt_namespaces = ["beta.com"] # Optional: for JWT federation
+    ```
+
+    In the Istio integration, the SPIRE Agent automatically maps these bundles to secret names that Envoy understands.
 
 ---
 
