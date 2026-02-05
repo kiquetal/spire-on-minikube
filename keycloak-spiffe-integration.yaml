@@ -1,0 +1,76 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak
+  namespace: spire-server
+  labels:
+    app: keycloak
+spec:
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+  selector:
+    app: keycloak
+  type: LoadBalancer # Using LoadBalancer for easier Minikube access (tunnel), or use NodePort/Ingress.
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keycloak
+  namespace: spire-server
+  labels:
+    app: keycloak
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: keycloak
+  template:
+    metadata:
+      labels:
+        app: keycloak
+    spec:
+      containers:
+      - name: keycloak
+        image: quay.io/keycloak/keycloak:26.5.2
+        args: ["start-dev"]
+        env:
+        - name: KEYCLOAK_ADMIN
+          value: "admin"
+        - name: KEYCLOAK_ADMIN_PASSWORD
+          value: "admin"
+        - name: KC_HTTP_ENABLED
+          value: "true"
+        - name: KC_HOSTNAME_STRICT
+          value: "false"
+        - name: KC_HOSTNAME_STRICT_HTTPS
+          value: "false"
+        # Features from integration-keycloak-for-repo.md
+        - name: KC_FEATURES
+          value: "token-exchange,token-exchange-standard:v2,admin-fine-grained-authz:v1,spiffe,client-auth-federated"
+        - name: KC_SPI_IDENTITY_BROKER_OPENID_CONNECT_ALLOW_INSECURE_CONNECTIONS
+          value: "true"
+        - name: KC_PROXY
+          value: "edge"
+        # Truststore configuration from integration-keycloak-for-repo.md
+        - name: KC_TRUSTSTORE_PATHS
+          value: "/var/run/secrets/spire-bundle/root-cert.pem"
+        ports:
+        - name: http
+          containerPort: 8080
+        readinessProbe:
+          httpGet:
+            path: /realms/master
+            port: 8080
+          initialDelaySeconds: 20
+          periodSeconds: 10
+        volumeMounts:
+        - name: spire-bundle
+          mountPath: /var/run/secrets/spire-bundle
+          readOnly: true
+      volumes:
+      - name: spire-bundle
+        configMap:
+          name: spire-bundle-pem
