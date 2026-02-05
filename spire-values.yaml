@@ -10,8 +10,8 @@ spire-agent:
 
 # This section fixes the "wrong type" crash by explicitely defining the config
 spire-server:
-  # Explicitly set the JWT Issuer to match the K8s service URL so Keycloak accepts it
-  jwtIssuer: "https://spire-spiffe-oidc-discovery-provider.spire-server.svc.cluster.local"
+  # Explicitly set the JWT Issuer to the trust domain URI as requested
+  jwtIssuer: "spiffe://example.org"
   controllerManager:
     enabled: true
     serviceAccount:

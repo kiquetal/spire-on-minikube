@@ -90,7 +90,7 @@ From a pod inside the cluster (e.g., `sleep-spire`):
     ```bash
     # Audience must match the Keycloak Realm URL usually, or be generic if Keycloak is lenient.
     # For OIDC Federation, the audience in the SPIFFE JWT is checked against the IDP config.
-    token=$(spire-agent api fetch jwt -audience "https://spire-spiffe-oidc-discovery-provider.spire-server.svc.cluster.local" -socketPath /run/spire/sockets/agent.sock | awk 'NR==2 {print $1}')
+    token=$(spire-agent api fetch jwt -audience "spiffe://example.org" -socketPath /run/spire/sockets/agent.sock | awk 'NR==2 {print $1}')
     ```
 
 2.  **Exchange Token:**
