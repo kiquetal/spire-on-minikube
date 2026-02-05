@@ -18,15 +18,33 @@ Ensure SPIRE is serving the JWKS endpoint over HTTP for testing:
 *   Endpoint: `http://spire-server.spire-server.svc:8080/keys`
 
 ## Step 3: Keycloak Admin Setup
-1.  **Identity Provider**:
-    *   Add Provider -> **SPIFFE**.
-    *   Alias: `spiffe`.
-    *   Bundle Endpoint: `http://spire-server.spire-server.svc:8080/keys`.
-2.  **Client**:
-    *   Create client `workload-client`.
-    *   Authentication: `Federated Json Web Token`.
-    *   IdP Alias: `spiffe`.
-    *   Subject: `spiffe://example.org/ns/spire-server/sa/default`.
+
+### 1. Configure the SPIFFE Identity Provider
+*   Go to **Identity Providers** -> **Add provider** -> **SPIFFE**.
+*   **Alias**: `spiffe` (This is the unique identifier used later by the client).
+*   **Bundle Endpoint**: `http://spire-server.spire-server.svc:8080/keys` (The internal SPIRE JWKS endpoint).
+*   **Accept Untrusted Certificates**: Enable this if testing with self-signed SPIRE certificates without a common Root CA in the system truststore (though `KC_TRUSTSTORE_PATHS` is preferred).
+
+### 2. Create the Workload Client
+This client represents your SPIFFE-enabled workload in Keycloak.
+
+*   **General Settings**:
+    *   **Client ID**: `workload-client`.
+    *   **Name**: `SPIFFE Workload Client`.
+*   **Capability Config**:
+    *   **Client Authentication**: **ON**. This makes the client "Confidential" (Private). It is mandatory because we are using a `client_assertion` (JWT) to authenticate the client itself.
+    *   **Authorization**: **OFF** (unless you need Fine-Grained Authorization).
+    *   **Authentication Flow**:
+        *   **Standard Flow**: **OFF** (Workloads typically don't use browser-based redirects).
+        *   **Service Accounts Roles**: **ON**. This allows the client to obtain tokens via the `client_credentials` grant.
+*   **Credentials Tab**:
+    *   **Client Authenticator**: Select **Federated Json Web Token**.
+    *   **Identity Provider Alias**: `spiffe` (Must match the Alias created in the previous step).
+    *   **Subject**: `spiffe://example.org/ns/apps/sa/sleep-spire`. 
+        *   *Note*: This is the "Identity" of the workload. Only a JWT-SVID with this exact SPIFFE ID will be accepted for this client.
+
+#### Why is it "Private" (Confidential)?
+In OIDC terms, a **Public** client is one that cannot keep a secret (like a browser app). A **Confidential** client can authenticate itself. By enabling **Client Authentication**, we tell Keycloak that this client must prove its identity. Instead of a static `client_secret`, this client uses its SPIFFE-issued JWT-SVID as a dynamic, short-lived secret (the `client_assertion`). This is significantly more secure than a password or long-lived secret.
 
 ## Step 4: Testing the Flow
 Execute the following command to fetch a JWT-SVID from a SPIRE-enabled pod and exchange it for a Keycloak token. This example uses the `sleep-spire` pod in the `apps` namespace.
