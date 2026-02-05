@@ -150,13 +150,14 @@ kubectl apply -f sleep-spire.yaml
 
 ### Checking jwt and testing exchange
 
-   kubectl exec -n apps debug-spire -c tools -- curl -X POST http://keycloak.spire-server.svc.cluster.local:8080/realms/spire-demo/protocol/openid-connect/token \
-       -d "grant_type=urn:ietf:params:oauth:grant-type:token-exchange" \
-       -d "client_id=my-workload-client" \
-       -d "client_secret=mysecret" \
-       -d "subject_token=eyJhbGciOiJSUzI1NiIsImtpZCI6IjVHbHZyQVZlTkE2Ulo5S1Mxbk5hRUZiNU0walJ3Q2Z0IiwidHlwIjoiSldUIn0.eyJhdWQiOlsic3BpcmUiXSwiZXhwIjoxNzcwMjU3NTg1LCJpYXQiOjE3NzAyNTM5ODUsImlzcyI6Imh0dHBzOi8vb2lkYy1kaXNjb3ZlcnkuZXhhbXBsZS5vcmciLCJzdWIiOiJzcGlmZmU6Ly9leGFtcGxlLm9yZy9ucy9hcHBzL3NhL2RlYnVnLXNwaXJlIn0.RcCfeyJpx6t-KGky3MAEtTiiQxBQ5I6moVq0tw7_96pS5lFI-JNDe5jTsWJbcDfbxUvTQeAn4I7ppiJgTmJ-rMAv5I46FHP7GlzZaefeMFjq3c7gMt6cqbRcvMuPEGlg8Q2vRl43SspAfnggv-x6vxPDfXb1Z_Vv6QvA-ZFoZXurboXOGDWhZgoiJFjinI6B5SSJIeqrFAVjjKIfAbfhyrylcYpBSaTf-ee4SJ4d2q6ZvWlo_OF30IfyI1HuKEjXSIXL-tmykmJMlADOaywVHmIWMrt0P72SF3uxaR3LxttyqzZY1v8vi_Q9-qYileJcqNZ5u6K9olytPV7ytGkHBw \
-      -d "subject_token_type=urn:ietf:params:oauth:token-type:access_token" \
-      -d "subject_issuer=spire"
+
+     kubectl exec -n apps debug-spire -c tools -- curl -X POST -s -X POST http://keycloak.spire-server.svc:8080/realms/spire-demo/protocol/openid-connect/token \
+	    -d "grant_type=client_credentials" \
+	    -d "client_id=spiffe://example.org/ns/apps/sa/debug-spire" \
+	    -d "client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-spiffe" \
+	    -d "client_assertion=eyJhbGciOiJSUzI1NiIsImtpZCI6IkhLNXgwU0h3YUFqOXd3bFpNcUJmUkFkekFmRVhFY3hnIiwidHlwIjoiSldUIn0.eyJhdWQiOlsiaHR0cDovL2tleWNsb2FrLnNwaXJlLXNlcnZlci5zdmM6ODA4MC9yZWFsbXMvc3BpcmUtZGVtbyJdLCJleHAiOjE3NzAzMDc3MzUsImlhdCI6MTc3MDMwNDEzNSwiaXNzIjoiaHR0cHM6Ly9vaWRjLWRpc2NvdmVyeS5leGFtcGxlLm9yZyIsInN1YiI6InNwaWZmZTovL2V4YW1wbGUub3JnL25zL2FwcHMvc2EvZGVidWctc3BpcmUifQ.qyYeiiiqOY58G5Wnb34kQPqzTxAaeOYDiHY5YqDyA1TyF9Hfp1W93oHVapZgx55H7K2_mgU33vUN8lWW3z7Qkp_xKqYchcMgRkIrBcsspoNyqpwF6hj2WvovRdF9bXxvjvJhCMqf5sfjs3sVs0-GDSdtH0USbbvJqUszeyIh4UUTesS8qM5RiWvA_GVV_DCG6KjGctIaw5FQbymyUF4-nNmSE7dhmum-HXAkX9j8vCs52Bp8O2i3t-hRvQFp__Er--LaF8kzSlt41tPtix1lv5Pag1hpJ_SpCu4ZCuyWMCSYMFC9np14Wh12y__rEbb0PLppRJuT5-SFZyAXjWOPSQ" | jq .
+
+
 
 kubectl exec -n apps debug-spire -c tools -- /tmp/spire-agent api fetch jwt \
        -audience "spire" \
