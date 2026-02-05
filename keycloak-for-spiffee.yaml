@@ -1,0 +1,99 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak
+  namespace: spire-server
+  labels:
+    app: keycloak
+spec:
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+  selector:
+    app: keycloak
+  type: LoadBalancer # Using LoadBalancer for easier Minikube access (tunnel), or use NodePort/Ingress.
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keycloak
+  namespace: spire-server
+  labels:
+    app: keycloak
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: keycloak
+  template:
+    metadata:
+      labels:
+        app: keycloak
+    spec:
+      initContainers:
+      - name: init-truststore
+        image: eclipse-temurin:21-jre-jammy
+        command:
+        - sh
+        - -c
+        - |
+          keytool -import -alias spire-root -keystore /tmp/truststore.jks -file /var/run/secrets/spire-bundle/root-cert.pem -storepass password -noprompt
+        volumeMounts:
+        - name: spire-bundle
+          mountPath: /var/run/secrets/spire-bundle
+          readOnly: true
+        - name: truststore-volume
+          mountPath: /tmp
+      containers:
+      - name: keycloak
+        image: quay.io/keycloak/keycloak:26.5.2
+        args: ["start-dev"]
+        env:
+        - name: KEYCLOAK_ADMIN
+          value: "admin"
+        - name: KEYCLOAK_ADMIN_PASSWORD
+          value: "admin"
+        # ... other envs ...
+        - name: KC_HTTP_ENABLED
+          value: "true"
+        - name: KC_HOSTNAME_STRICT
+          value: "false"
+        - name: KC_HOSTNAME_STRICT_HTTPS
+          value: "false"
+        - name: KC_FEATURES
+          value: "token-exchange,token-exchange-standard:v2,admin-fine-grained-authz:v1,spiffe"
+        - name: KC_SPI_IDENTITY_BROKER_OPENID_CONNECT_ALLOW_INSECURE_CONNECTIONS
+          value: "true"
+        - name: KC_PROXY
+          value: "edge"
+        # Point to the JKS we created in initContainer
+        - name: KC_HTTPS_TRUST_STORE_FILE
+          value: "/tmp/truststore.jks"
+        - name: KC_HTTPS_TRUST_STORE_PASSWORD
+          value: "password"
+        - name: JAVA_OPTS_APPEND
+          value: "-Djavax.net.ssl.trustStore=/tmp/truststore.jks -Djavax.net.ssl.trustStorePassword=password"
+        # ... health checks ...
+        ports:
+        - name: http
+          containerPort: 8080
+        readinessProbe:
+          httpGet:
+            path: /realms/master
+            port: 8080
+          initialDelaySeconds: 20
+          periodSeconds: 10
+        volumeMounts:
+        - name: spire-bundle
+          mountPath: /var/run/secrets/spire-bundle
+          readOnly: true
+        - name: truststore-volume
+          mountPath: /tmp
+      volumes:
+      - name: spire-bundle
+        configMap:
+          name: spire-bundle-pem
+      - name: truststore-volume
+        emptyDir: {}
