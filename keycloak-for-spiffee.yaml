@@ -63,7 +63,7 @@ spec:
         - name: KC_HOSTNAME_STRICT_HTTPS
           value: "false"
         - name: KC_FEATURES
-          value: "token-exchange,token-exchange-standard:v2,admin-fine-grained-authz:v1,spiffe"
+          value: "token-exchange,admin-fine-grained-authz:v1,spiffe"
         - name: KC_SPI_IDENTITY_BROKER_OPENID_CONNECT_ALLOW_INSECURE_CONNECTIONS
           value: "true"
         - name: KC_PROXY
