@@ -81,3 +81,49 @@ Also, verify the Istio proxy configuration for any workload:
 ```bash
 istioctl proxy-config bootstrap <pod-name> -n <namespace> | grep cluster_name
 ```
+
+## 6. Verifying mTLS and Certificates
+
+To verify that mTLS is correctly enabled in a namespace and that workloads are using the expected certificates, you can use these commands.
+
+### Verify Namespace mTLS Policy
+First, check if a `PeerAuthentication` policy is defined for the namespace. This is what enforces mTLS at the namespace level.
+
+```bash
+# Check for PeerAuthentication resources in the namespace
+kubectl get peerauthentication -n <namespace>
+
+# Check for configuration issues in the namespace
+istioctl analyze -n <namespace>
+```
+
+### Check mTLS Status for a Workload
+The `describe` command is the most direct way to see if a workload is actually using mTLS and which policy is being applied.
+
+```bash
+# Verify mTLS for a specific pod
+istioctl x describe pod <pod-name> -n <namespace>
+```
+
+**Example Output:**
+```text
+Pod: httpbin-74fb669cc6-9v98j
+...
+Authentication Policies:
+   Applied mTLS Policy: STRICT  <-- STRICT means mTLS is required and plain HTTP is rejected
+...
+```
+
+### Verify Certificates (Optional: SPIRE Integration)
+To ensure the certificates are being correctly issued (by SPIRE or Istiod), inspect the proxy's secrets:
+
+```bash
+# List secrets for a pod
+istioctl proxy-config secret <pod-name> -n <namespace>
+```
+
+To verify the identity (SPIFFE ID) inside the certificate:
+
+```bash
+istioctl proxy-config secret <pod-name> -n <namespace> -o json | jq -r '.dynamicActiveSecrets[] | select(.name=="default") | .secret.tlsCertificate.certificateChain.inlineBytes' | base64 -d | openssl x509 -text -noout | grep "Subject Alternative Name" -A 1
+```
