@@ -127,3 +127,60 @@ To verify the identity (SPIFFE ID) inside the certificate:
 ```bash
 istioctl proxy-config secret <pod-name> -n <namespace> -o json | jq -r '.dynamicActiveSecrets[] | select(.name=="default") | .secret.tlsCertificate.certificateChain.inlineBytes' | base64 -d | openssl x509 -text -noout | grep "Subject Alternative Name" -A 1
 ```
+
+## 7. Deep Dive with `istioctl proxy-config`
+
+To troubleshoot traffic issues or verify the Envoy configuration injected by Istio, use the `proxy-config` (or `pc`) command. This allows you to see exactly how the `istio-proxy` sidecar is handling requests.
+
+### View Routes
+Check the virtual hosts and routes. This is useful for debugging 404 errors or unexpected routing behavior.
+```bash
+istioctl proxy-config routes <pod-name> -n <namespace>
+```
+**Example Output:**
+```text
+NOTE: This output only contains virtual hosts with routes.
+NAME        VHOST NAME            DOMAINS     MATCH                  VIRTUAL SERVICE
+80          httpbin.foo.svc.cluster.local  *           /status/*, /delay/*    httpbin.foo
+...
+```
+
+### View Clusters
+Check the upstream clusters the proxy knows about. Use this to verify that SPIRE-issued certificates are being used for mTLS between services.
+```bash
+istioctl proxy-config clusters <pod-name> -n <namespace>
+```
+**Example Output:**
+```text
+SERVICE FQDN                            PORT      SUBSET      DIRECTION     TYPE
+httpbin.foo.svc.cluster.local           80        -           outbound      EDS
+...
+```
+
+### View Endpoints
+Verify the actual backend IP addresses the proxy is targeting.
+```bash
+istioctl proxy-config endpoints <pod-name> -n <namespace>
+```
+
+### View Listeners
+Check which ports the proxy is listening on and what filters (like RBAC or TLS) are applied.
+```bash
+istioctl proxy-config listeners <pod-name> -n <namespace>
+```
+
+### Changing Log Levels Dynamically
+If you need to see more detail in the `istio-proxy` logs without restarting the pod, you can change the log level of the Envoy components.
+
+```bash
+# Set a specific logger (e.g., rbac) to debug
+istioctl proxy-config log <pod-name> -n <namespace> --level rbac:debug
+
+# Reset all loggers to info (or use -r to reset to default)
+istioctl proxy-config log <pod-name> -n <namespace> --level info
+```
+
+After increasing the log level, you can view the detailed logs using:
+```bash
+kubectl logs <pod-name> -n <namespace> -c istio-proxy | grep "rbac"
+```
