@@ -2,6 +2,36 @@
 
 This guide outlines the steps to apply the SPIFFE federated authentication to your Minikube environment using the modified Keycloak configuration.
 
+## Step 0: Prepare SPIRE Trust Bundle ConfigMap (PEM format)
+Keycloak and Istio require the SPIRE trust bundle in **PEM format**. 
+
+By default, the `spire-bundle` ConfigMap created by the SPIRE Helm chart contains the bundle in **JSON format** (usually under the key `bundle.spiffe` or `spiffe.bundle`), which is not compatible with Keycloak's `KC_TRUSTSTORE_PATHS`.
+
+To create the required `spire-bundle-pem` ConfigMap:
+
+```bash
+# 1. Extract the bundle in PEM format from the SPIRE Server
+kubectl exec -n spire-server spire-server-0 -- /opt/spire/bin/spire-server bundle show -format pem > root-cert.pem
+
+# 2. Create the spire-bundle-pem ConfigMap in the spire-server namespace
+kubectl create configmap spire-bundle-pem -n spire-server --from-file=root-cert.pem --dry-run=client -o yaml | kubectl apply -f -
+
+# 3. (Optional) If you are using the 'apps' namespace for workloads, 
+# you might need it there too if not using the sidecar injector for everything
+kubectl create configmap spire-bundle-pem -n apps --from-file=root-cert.pem --dry-run=client -o yaml | kubectl apply -f -
+```
+
+**Note**: If you want to automate this, you can configure the SPIRE Server to publish the bundle as PEM directly, but manual creation is the quickest fix for this error.
+
+### Advanced: Converting from JSON ConfigMap
+If you cannot run `kubectl exec` on the SPIRE server, you can convert the existing JSON-formatted `spire-bundle` ConfigMap using `jq` and `openssl`:
+
+```bash
+kubectl get configmap spire-bundle -n spire-server -o jsonpath='{.data.bundle\.spiffe}' | \
+  jq -r '.keys[] | select(.use=="x509-svid") | .x5c[0]' | \
+  while read -r line; do echo "$line" | base64 -d | openssl x509 -inform der; done > root-cert.pem
+```
+
 ## Step 1: Update Keycloak Deployment
 Apply the changes to your `manifest/keycloak-for-spiffee.yaml` to include the required features and truststore paths.
 
