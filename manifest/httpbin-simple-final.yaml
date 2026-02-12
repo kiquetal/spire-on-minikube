@@ -1,0 +1,43 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: httpbin-simple
+  namespace: apps
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: httpbin-simple
+  namespace: apps
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: httpbin-simple
+  template:
+    metadata:
+      labels:
+        app: httpbin-simple
+      annotations:
+        # Use the custom SPIRE template we defined in Helm
+        inject.istio.io/templates: "sidecar,spire"
+    spec:
+      serviceAccountName: httpbin-simple
+      containers:
+      - name: httpbin
+        image: docker.io/kennethreitz/httpbin
+        ports:
+        - containerPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: httpbin-simple
+  namespace: apps
+spec:
+  ports:
+  - name: http
+    port: 8000
+    targetPort: 80
+  selector:
+    app: httpbin-simple
