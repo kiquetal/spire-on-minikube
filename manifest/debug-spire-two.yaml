@@ -1,41 +1,39 @@
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: debug-spire
+  name: debug-spire-two
   namespace: apps
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: debug-spire
+  name: debug-spire-two
   namespace: apps
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: debug-spire
+      app: debug-spire-two
   template:
     metadata:
       labels:
-        app: debug-spire
-        # Trigger SPIRE Identity registration
+        app: debug-spire-two
         spiffe.io/spire-managed-identity: "true"
       annotations:
-        # Inject Istio sidecar and SPIRE configuration (socket mount)
         inject.istio.io/templates: "sidecar,spire"
     spec:
-      serviceAccountName: debug-spire
+      serviceAccountName: debug-spire-two
       containers:
       - name: tools
         image: ubuntu:latest
         command: ["/bin/bash", "-c"]
         args:
           - |
-            apt-get update && apt-get install -y curl jq wget tar && \
-            wget https://github.com/spiffe/spire/releases/download/v1.11.0/spire-1.11.0-linux-amd64-musl.tar.gz && \
-            tar -xvf spire-1.11.0-linux-amd64-musl.tar.gz && \
-            cp spire-1.11.0/bin/spire-agent /usr/local/bin/spire-agent && \
-            rm -rf spire-1.11.0* && \
+            apt-get update && apt-get install -y curl jq wget tar && 
+            wget https://github.com/spiffe/spire/releases/download/v1.11.0/spire-1.11.0-linux-amd64-musl.tar.gz && 
+            tar -xvf spire-1.11.0-linux-amd64-musl.tar.gz && 
+            cp spire-1.11.0/bin/spire-agent /usr/local/bin/spire-agent && 
+            rm -rf spire-1.11.0* && 
             sleep infinity
         volumeMounts:
         - name: workload-socket
