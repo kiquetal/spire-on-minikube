@@ -358,9 +358,10 @@ kubectl apply -f manifest/debug-spire.yaml
 ```
 
 The `debug-spire` pod is configured with:
+- **Base Image**: `ubuntu:latest`.
 - **Label**: `spiffe.io/spire-managed-identity: "true"` for auto-registration.
 - **Annotation**: `inject.istio.io/templates: "sidecar,spire"` to mount the SPIRE socket.
-- **Container**: Uses the `spire-agent` image to provide the binary for token fetching.
+- **Setup**: On startup, the pod installs `curl`, `jq`, and downloads the `spire-agent` binary from the official SPIFFE releases, placing it in `/usr/local/bin` for easy access.
 
 ### Testing the Flow
 
@@ -370,7 +371,7 @@ The `debug-spire` pod is configured with:
 
 ```bash
 # 1. Fetch JWT SVID with correct audience
-TOKEN=$(kubectl exec -n apps debug-spire -c tools -- /opt/spire/bin/spire-agent api fetch jwt \
+TOKEN=$(kubectl exec -n apps debug-spire -c tools -- spire-agent api fetch jwt \
   -audience http://keycloak.spire-server.svc:8080/realms/spire-demo \
   -socketPath /run/secrets/workload-spiffe-uds/socket \
   -format json | jq -r '.svids[0].token')
