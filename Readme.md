@@ -58,7 +58,7 @@ This repository implements a **Zero Trust Service Mesh** using SPIRE (SPIFFE Run
 | **SPIRE Agent** | Runs on each node, attests workloads and delivers SVIDs | Deployed via DaemonSet |
 | **SPIRE CSI Driver** | Mounts SPIRE Workload API socket into pods | Enabled in Helm values |
 | **SPIRE Controller Manager** | Automates workload registration via CRDs | `ClusterSPIFFEID` resources |
-| **Istio (Istiod)** | Service mesh control plane, configured to trust SPIRE CA | `manifest/istio-spire-values.yaml` |
+| **Istio (Istiod)** | Service mesh control plane, configured to trust SPIRE CA | `manifest/istio-spire-values-fixed.yaml` |
 | **Istio Ingress Gateway** | Entry point for external traffic, SPIRE-enabled | `manifest/ingress-spire-patch.yaml` |
 | **Keycloak (Optional)** | OIDC provider for token exchange with SPIFFE JWTs | `manifest/keycloak-*.yaml` |
 
@@ -68,8 +68,8 @@ This repository implements a **Zero Trust Service Mesh** using SPIRE (SPIFFE Run
 2. **Workload Attestation**: SPIRE Agent identifies pods via Kubernetes API and CSI driver
 3. **SVID Issuance**: SPIRE Server issues X.509-SVID with SPIFFE ID (e.g., `spiffe://example.org/ns/apps/sa/httpbin`)
 4. **Socket Delivery**: SPIRE CSI Driver mounts Workload API socket at `/run/secrets/workload-spiffe-uds/socket`
-5. **Envoy Integration**: Istio sidecar fetches SVIDs via socket and uses them for mTLS
-6. **Trust Validation**: Envoy validates peer certificates against SPIRE bundle (`root-cert.pem`)
+5. **Envoy Integration**: Istio sidecar fetches SVIDs and the trust bundle via socket (SDS) for mTLS
+6. **Trust Validation**: Envoy validates peer certificates using the bundle retrieved from the SPIRE Agent socket
 
 ### Key Design Decisions
 
@@ -80,10 +80,10 @@ Instead of manual `spire-server entry create` commands, this implementation uses
 - GitOps-friendly configuration
 
 #### 2. Custom Istio Sidecar Template
-The `spire` template in `istio-spire-values.yaml` ensures every injected sidecar:
+The `spire` template in `istio-spire-values-fixed.yaml` ensures every injected sidecar:
+- Automatically receives the `spiffe.io/spire-managed-identity: "true"` label
 - Mounts the SPIRE Workload API socket via CSI driver
-- Mounts the SPIRE trust bundle ConfigMap
-- Sets `ISTIO_META_WORKLOAD_SOCKET_PATH` environment variable
+- Configures `ISTIO_META_WORKLOAD_SOCKET_PATH` globally via `proxyMetadata`
 
 Workloads opt-in via annotation: `inject.istio.io/templates: "sidecar,spire"`
 
@@ -111,7 +111,7 @@ See `federated-spire.md` for detailed federation design.
 | **Identity** | X.509-SVID with SPIFFE ID | SPIRE Server |
 | **Authentication** | Mutual TLS (mTLS) | Envoy Sidecar |
 | **Authorization** | Istio AuthorizationPolicy with SPIFFE principals | Envoy RBAC Filter |
-| **Trust Root** | SPIRE Bundle (CA Certificate) | Mounted ConfigMap |
+| **Trust Root** | SPIRE Bundle (CA Certificate) | SPIRE Agent Socket (SDS) |
 | **Attestation** | Kubernetes PSAT + CSI Driver | SPIRE Agent |
 
 ### Operational Features
@@ -139,7 +139,8 @@ See `integration-keycloak-for-repo.md` for complete setup instructions.
 ├── Readme.md                          # Main setup guide (this file)
 ├── manifest/
 │   ├── spire-values.yaml              # SPIRE Helm configuration
-│   ├── istio-spire-values.yaml        # Istio + SPIRE integration config
+│   ├── istio-spire-values-fixed.yaml  # Istio + SPIRE integration config (FIXED)
+│   ├── istio-spire-values.yaml        # Istio + SPIRE integration config (Legacy/Broken)
 │   ├── ingress-spire-patch.yaml       # Ingress Gateway SPIRE enablement
 │   ├── httpbin-spire.yaml             # Sample workload with SPIRE template
 │   ├── sleep-spire.yaml               # Debug pod with SPIRE socket
@@ -192,18 +193,18 @@ helm repo update
 helm install istio-base istio/base -n istio-system --create-namespace
 
 # 2. Install Istiod (Control Plane) with SPIRE integration
-helm install istiod istio/istiod -n istio-system --wait -f manifest/istio-spire-values.yaml
+helm install istiod istio/istiod -n istio-system --wait -f manifest/istio-spire-values-fixed.yaml
 ```
 
-### Understanding `manifest/istio-spire-values.yaml`
+### Understanding `manifest/istio-spire-values-fixed.yaml`
 
 The values provided to Helm configure Istio to integrate natively with SPIRE:
 
-- **Global Trust Root**: `meshConfig.defaultConfig.caCertificatesPem` ensures every injected sidecar knows to trust the SPIRE root certificate for mTLS.
+- **Centralized Metadata**: `meshConfig.defaultConfig.proxyMetadata.ISTIO_META_WORKLOAD_SOCKET_PATH` ensures every injected sidecar knows exactly where the SPIRE socket is located.
+- **SDS for Trust**: Unlike the legacy configuration, this uses **Secret Discovery Service (SDS)** to fetch the trust bundle via the socket, eliminating the need for manual ConfigMap syncing.
 - **Custom Sidecar Template**: `sidecarInjectorWebhook.templates.spire` defines a named template that:
+    - Automatically labels pods with `spiffe.io/spire-managed-identity: "true"`.
     - Mounts the **SPIRE Agent socket** via the CSI driver.
-    - Mounts the **SPIRE Bundle** (root CA) from a ConfigMap.
-    - Sets `ISTIO_META_WORKLOAD_SOCKET_PATH` so the Envoy proxy knows where to find the socket.
 
 To use this template, workloads must be annotated with `inject.istio.io/templates: "sidecar,spire"`.
 
