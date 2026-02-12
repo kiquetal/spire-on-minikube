@@ -78,3 +78,12 @@ While the Ingress Gateway requires a manual patch (or a custom gateway template)
 1. **Consistency**: Both the Gateway and the Sidecars must point to the same SPIRE socket and trust the same root CA bundle to establish a unified identity mesh.
 2. **Bootstrapping**: The Gateway is often deployed via its own Helm chart (`istio/gateway`), which doesn't automatically inherit the custom sidecar templates. The patch bridges this gap.
 3. **Trust Validation**: Without the `caCertificatesPem` configuration (provided globally in `meshConfig` or locally in the Gateway patch), Envoy would attempt to validate identities against Istio's default CA (istiod) instead of SPIRE, leading to connection resets.
+
+## SPIRE Bundle Consistency
+
+It is critical that the `spire-bundle` ConfigMap in the `istio-ingress` namespace matches the trust root from the `spire-bundle` ConfigMap in the `spire-server` namespace (originally created by the SPIRE Helm chart).
+
+### Key Points:
+*   **Source of Truth**: The `spire-server` namespace contains the authoritative bundle.
+*   **Format Difference**: While the Helm-created bundle in `spire-server` is in JSON format (`bundle.spiffe`), the Ingress Gateway requires it in PEM format (`root-cert.pem`).
+*   **Manual Synchronization**: Ensure that when the SPIRE trust root is updated, the PEM-formatted ConfigMap in the `istio-ingress` namespace is also updated to reflect these changes.
