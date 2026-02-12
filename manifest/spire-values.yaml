@@ -17,5 +17,4 @@ spire-server:
       name: spire-controller-manager
     # We define this to satisfy the template logic
     identities:
-      clusterSPIFFEIDs:
-        enabled: true
+      clusterSPIFFEIDs: {}

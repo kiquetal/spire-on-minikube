@@ -227,10 +227,11 @@ helm repo add spiffe https://spiffe.github.io/helm-charts-hardened/
 helm repo update
 
 # Install SPIRE CRDs
+# Note: Version 0.5.0+ is required for compatibility with spire 0.26.0+ due to the 'hint' field
 helm upgrade --install spire-crds spiffe/spire-crds \
   --namespace spire-server \
   --create-namespace \
-  --version 0.4.0 \
+  --version 0.5.0 \
   --wait
 
 # Install SPIRE (Server and Agent) with CSI driver enabled
@@ -239,6 +240,8 @@ helm upgrade --install spire spiffe/spire \
   --version 0.26.0 \
   -f manifest/spire-values.yaml \
   --wait
+
+> **Troubleshooting**: If you see an error like `field not declared in schema` for `.spec.hint`, ensure `spire-crds` is at version `0.5.0` or higher.
 ```
 
 ### Register Cluster SPIFFE ID
