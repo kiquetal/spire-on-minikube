@@ -55,3 +55,80 @@ After restarting, you will be able to reach it without the specific `Host` heade
 ```bash
 curl -k https://localhost:8443/.well-known/openid-configuration
 ```
+
+## Enabling HTTP (Insecure) Access
+
+The provider is configured for HTTPS by default. To allow HTTP (e.g., for simplified testing or internal cluster traffic):
+
+### Step 1: Update the ConfigMap
+Add `"insecure_addr": ":8080"` to the `oidc-discovery-provider.conf` section.
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: spire-spiffe-oidc-discovery-provider
+  namespace: spire-server
+data:
+  oidc-discovery-provider.conf: |
+    {
+      "domains": [
+        "spire-spiffe-oidc-discovery-provider.spire-server.svc.cluster.local",
+        "localhost"
+      ],
+      "insecure_addr": ":8080",
+      "workload_api": {
+        "socket_path": "/run/spire/sockets/agent.sock",
+        "trust_domain": "example.org"
+      }
+    }
+```
+
+### Step 2: Update the Deployment
+Add `containerPort: 8080` to the `spiffe-oidc-discovery-provider` container.
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spire-spiffe-oidc-discovery-provider
+  namespace: spire-server
+spec:
+  template:
+    spec:
+      containers:
+        - name: spiffe-oidc-discovery-provider
+          # ...
+          ports:
+            - containerPort: 443
+              name: https
+            - containerPort: 8080
+              name: http
+```
+
+### Step 3: Update the Service
+Add a port mapping for HTTP (e.g., cluster port 80 to targetPort 8080).
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: spire-spiffe-oidc-discovery-provider
+  namespace: spire-server
+spec:
+  ports:
+    - name: https
+      port: 443
+      targetPort: 443
+    - name: http
+      port: 80
+      targetPort: 8080
+```
+
+### Step 4: Restart the Pod
+Apply the changes and restart the deployment:
+
+```bash
+kubectl rollout restart deployment -n spire-server spire-spiffe-oidc-discovery-provider
+```
+
