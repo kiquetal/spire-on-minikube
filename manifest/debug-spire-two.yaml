@@ -4,43 +4,40 @@ metadata:
   name: debug-spire-two
   namespace: apps
 ---
-apiVersion: apps/v1
-kind: Deployment
+apiVersion: v1
+kind: Pod
 metadata:
   name: debug-spire-two
   namespace: apps
+  labels:
+    app: debug-spire-two
+    spiffe.io/spire-managed-identity: "true"
+  annotations:
+    # Use standard sidecar injection
+    sidecar.istio.io/inject: "true"
+    # Map our volume to the sidecar so it can also see the SPIRE socket
+    sidecar.istio.io/userVolumeMount: '[{"name":"spire-socket-dir","mountPath":"/run/secrets/workload-spiffe-uds","readOnly":true}]'
 spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: debug-spire-two
-  template:
-    metadata:
-      labels:
-        app: debug-spire-two
-        spiffe.io/spire-managed-identity: "true"
-      annotations:
-        inject.istio.io/templates: "sidecar,spire"
-    spec:
-      serviceAccountName: debug-spire-two
-      containers:
-      - name: tools
-        image: ubuntu:latest
-        command: ["/bin/bash", "-c"]
-        args:
-          - |
-            apt-get update && apt-get install -y curl jq wget tar && 
-            wget https://github.com/spiffe/spire/releases/download/v1.11.0/spire-1.11.0-linux-amd64-musl.tar.gz && 
-            tar -xvf spire-1.11.0-linux-amd64-musl.tar.gz && 
-            cp spire-1.11.0/bin/spire-agent /usr/local/bin/spire-agent && 
-            rm -rf spire-1.11.0* && 
-            sleep infinity
-        volumeMounts:
-        - name: workload-socket
-          mountPath: /run/secrets/workload-spiffe-uds
-          readOnly: true
-      volumes:
-      - name: workload-socket
-        csi:
-          driver: csi.spiffe.io
-          readOnly: true
+  serviceAccountName: debug-spire-two
+  containers:
+  - name: tools
+    image: ubuntu:latest
+    command: ["/bin/bash", "-c"]
+    args:
+      - |
+        apt-get update && apt-get install -y curl jq wget tar && \
+        wget -q https://github.com/spiffe/spire/releases/download/v1.11.0/spire-1.11.0-linux-amd64-musl.tar.gz && \
+        tar -xf spire-1.11.0-linux-amd64-musl.tar.gz && \
+        cp spire-1.11.0/bin/spire-agent /usr/local/bin/spire-agent && \
+        rm -rf spire-1.11.0* && \
+        echo "Installation complete." && \
+        sleep infinity
+    volumeMounts:
+    - name: spire-socket-dir
+      mountPath: /run/secrets/workload-spiffe-uds
+      readOnly: true
+  volumes:
+  - name: spire-socket-dir
+    csi:
+      driver: csi.spiffe.io
+      readOnly: true

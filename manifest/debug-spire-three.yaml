@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: debug-spire-three
+  namespace: apps
+  labels:
+    app: debug-spire-three
+    spiffe.io/spire-managed-identity: "true"
+  annotations:
+    # 1. Inject the sidecar and our custom SPIRE template
+    inject.istio.io/templates: "sidecar,spire"
+    # 2. Only mount the volume that is ALREADY injected by the 'spire' template
+    sidecar.istio.io/userVolumeMount: '[{"name":"workload-socket","mountPath":"/run/secrets/workload-spiffe-uds","readOnly":true}]'
+spec:
+  serviceAccountName: debug-spire-two
+  containers:
+  - name: tools
+    image: ubuntu:latest
+    command: ["/bin/bash", "-c"]
+    args:
+      - |
+        apt-get update && apt-get install -y curl jq wget tar && 
+        wget -q https://github.com/spiffe/spire/releases/download/v1.11.0/spire-1.11.0-linux-amd64-musl.tar.gz && 
+        tar -xf spire-1.11.0-linux-amd64-musl.tar.gz && 
+        cp spire-1.11.0/bin/spire-agent /usr/local/bin/spire-agent && 
+        rm -rf spire-1.11.0* && 
+        echo "Installation complete." && 
+        sleep infinity

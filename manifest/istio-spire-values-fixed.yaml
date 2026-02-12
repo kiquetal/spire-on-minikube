@@ -1,0 +1,26 @@
+# istio-spire-values-fixed.yaml
+meshConfig:
+  trustDomain: "example.org"
+  defaultConfig:
+    proxyMetadata:
+      # Centralized socket path configuration for Envoy
+      ISTIO_META_WORKLOAD_SOCKET_PATH: /run/secrets/workload-spiffe-uds/socket
+
+sidecarInjectorWebhook:
+  templates:
+    spire: |
+      labels:
+        # Enable SPIRE management for the pod
+        spiffe.io/spire-managed-identity: "true"
+      spec:
+        containers:
+        - name: istio-proxy
+          volumeMounts:
+          - name: workload-socket
+            mountPath: /run/secrets/workload-spiffe-uds
+            readOnly: true
+        volumes:
+          - name: workload-socket
+            csi:
+              driver: "csi.spiffe.io"
+              readOnly: true
