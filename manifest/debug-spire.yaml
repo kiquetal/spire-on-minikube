@@ -1,0 +1,37 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: debug-spire
+  namespace: apps
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: debug-spire
+  namespace: apps
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: debug-spire
+  template:
+    metadata:
+      labels:
+        app: debug-spire
+        # Trigger SPIRE Identity registration
+        spiffe.io/spire-managed-identity: "true"
+      annotations:
+        # Inject Istio sidecar and SPIRE configuration (socket mount)
+        inject.istio.io/templates: "sidecar,spire"
+    spec:
+      serviceAccountName: debug-spire
+      containers:
+      - name: tools
+        # Using the SPIRE agent image as it contains the 'spire-agent' binary 
+        # at /opt/spire/bin/spire-agent and is based on Ubuntu/Debian.
+        image: ghcr.io/spiffe/spire-agent:1.11.0
+        command: ["/bin/bash", "-c", "apt-get update && apt-get install -y curl jq && sleep infinity"]
+        volumeMounts:
+        - name: workload-socket
+          mountPath: /run/secrets/workload-spiffe-uds
+          readOnly: true

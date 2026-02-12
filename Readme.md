@@ -143,6 +143,7 @@ See `integration-keycloak-for-repo.md` for complete setup instructions.
 │   ├── ingress-spire-patch.yaml       # Ingress Gateway SPIRE enablement
 │   ├── httpbin-spire.yaml             # Sample workload with SPIRE template
 │   ├── sleep-spire.yaml               # Debug pod with SPIRE socket
+│   ├── debug-spire.yaml               # Ubuntu-based debug pod for Keycloak integration
 │   ├── keycloak-*.yaml                # Keycloak deployment manifests
 ├── federated-spire.md                 # Multi-cluster federation guide
 ├── day-two.md                         # Operational procedures
@@ -319,7 +320,7 @@ kubectl apply -f manifest/sleep-spire.yaml
 ### Deploy Keycloak
 
 ```bash
-kubectl apply -f manifest/keycloak-for-spiffee.yaml
+kubectl apply -f manifest/keycloak-spiffe-integration.yaml
 ```
 
 ### Configure Keycloak

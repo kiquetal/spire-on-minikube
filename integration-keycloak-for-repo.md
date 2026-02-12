@@ -42,7 +42,14 @@ You can name your client anything (e.g., `workload-client`), but you must map it
     *   **Identity Provider Alias**: `spiffe` (Must match the Alias created in Step 3.1).
     *   **Subject**: `spiffe://example.org/ns/apps/sa/debug-spire` (The SPIFFE ID of the workload you want to authenticate).
 
-## Step 4: Testing the Flow
+## Step 4: Deploy Debug Pod
+Deploy the `debug-spire` pod which includes the SPIRE agent binary and necessary tools (`curl`, `jq`).
+
+```bash
+kubectl apply -f manifest/debug-spire.yaml
+```
+
+## Step 5: Testing the Flow
 When using the strict `jwt-spiffe` assertion type, the **Client ID parameter in your request** must match the **SPIFFE ID** (the Subject of the JWT), even if the Keycloak Client ID is different.
 
 **Important**: 
