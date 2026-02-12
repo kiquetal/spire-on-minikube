@@ -87,3 +87,26 @@ It is critical that the `spire-bundle` ConfigMap in the `istio-ingress` namespac
 *   **Source of Truth**: The `spire-server` namespace contains the authoritative bundle.
 *   **Format Difference**: While the Helm-created bundle in `spire-server` is in JSON format (`bundle.spiffe`), the Ingress Gateway requires it in PEM format (`root-cert.pem`).
 *   **Manual Synchronization**: Ensure that when the SPIRE trust root is updated, the PEM-formatted ConfigMap in the `istio-ingress` namespace is also updated to reflect these changes.
+
+### Replication & Conversion Steps:
+
+To replicate the trust bundle in the `istio-ingress` namespace (or any other namespace requiring PEM format):
+
+```bash
+# 1. Extract the bundle in PEM format from the SPIRE Server
+kubectl exec -n spire-server spire-server-0 -- /opt/spire/bin/spire-server bundle show -format pem > root-cert.pem
+
+# 2. Create or Update the spire-bundle ConfigMap in the istio-ingress namespace
+kubectl create configmap spire-bundle -n istio-ingress --from-file=root-cert.pem --dry-run=client -o yaml | kubectl apply -f -
+
+# 3. Clean up the local file
+rm root-cert.pem
+```
+
+**Alternative (using jq):** If you cannot exec into the pod, use this command to convert the existing JSON ConfigMap:
+
+```bash
+kubectl get configmap spire-bundle -n spire-server -o jsonpath='{.data.bundle\.spiffe}' | \
+  jq -r '.keys[] | select(.use=="x509-svid") | .x5c[0]' | \
+  while read -r line; do echo "$line" | base64 -d | openssl x509 -inform der; done > root-cert.pem
+```

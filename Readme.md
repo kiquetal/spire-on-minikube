@@ -350,6 +350,18 @@ Ensure your `manifest/keycloak-for-spiffee.yaml` includes:
   - **Identity Provider Alias**: `spiffe`
   - **Subject**: `spiffe://example.org/ns/apps/sa/debug-spire`
 
+#### 4. Deploy Debug Pod
+To verify the integration, deploy a debug pod that has access to the SPIRE workload socket and the `spire-agent` CLI.
+
+```bash
+kubectl apply -f manifest/debug-spire.yaml
+```
+
+The `debug-spire` pod is configured with:
+- **Label**: `spiffe.io/spire-managed-identity: "true"` for auto-registration.
+- **Annotation**: `inject.istio.io/templates: "sidecar,spire"` to mount the SPIRE socket.
+- **Container**: Uses the `spire-agent` image to provide the binary for token fetching.
+
 ### Testing the Flow
 
 **Important**: 
