@@ -381,6 +381,30 @@ To authenticate a different workload (e.g., `spiffe://example.org/ns/apps/sa/ano
 
 For detailed configuration, see `integration-keycloak-for-repo.md`.
 
+## OIDC Customization
+
+### Using Localhost or Custom Domains
+By default, the OIDC Discovery Provider validates the `Host` header. To use `localhost` (e.g., when using `kubectl port-forward`), you must update its configuration:
+
+1.  **Edit the ConfigMap**:
+    ```bash
+    kubectl edit configmap -n spire-server spire-spiffe-oidc-discovery-provider
+    ```
+2.  **Add `localhost` to the `domains` list** in `oidc-discovery-provider.conf`.
+3.  **Restart the Pod**:
+    ```bash
+    kubectl rollout restart deployment -n spire-server spire-spiffe-oidc-discovery-provider
+    ```
+
+### Enabling HTTP (Instead of HTTPS)
+The provider is configured for HTTPS by default. To allow HTTP:
+
+1.  **Update ConfigMap**: Add `"insecure_addr": ":8080"` to the `oidc-discovery-provider.conf` section.
+2.  **Update Deployment**: Add `containerPort: 8080` to the `spiffe-oidc-discovery-provider` container.
+3.  **Update Service**: Add a port mapping for HTTP (e.g., port 80 to targetPort 8080).
+
+For more details, see `oidc-provider-spiffe.md`.
+
 ### Useful commands for SPIRE Server
 
 ```bash
