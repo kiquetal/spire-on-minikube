@@ -125,11 +125,12 @@ See `federated-spire.md` for detailed federation design.
 
 #### Keycloak OIDC (Optional)
 Workloads can exchange SPIFFE JWTs for Keycloak access tokens using:
-- **Token Exchange (RFC 8693)**: Stable in Keycloak 26.2+
+- **SPIFFE Identity Provider**: Native Keycloak support for SPIFFE authentication
+- **Federated JWT Authentication**: Client authenticator that validates SPIFFE JWTs
 - **SPIRE OIDC Discovery Provider**: Exposes JWKS endpoint for JWT validation
-- **Single Client Pattern**: One Keycloak client handles all SPIFFE identities
+- **Subject-based Client Mapping**: Keycloak clients map to SPIFFE IDs via Subject field
 
-See `integration-keycloak.md` for implementation details.
+See `integration-keycloak-for-repo.md` for complete setup instructions.
 
 ### File Structure
 
@@ -146,7 +147,8 @@ See `integration-keycloak.md` for implementation details.
 ├── federated-spire.md                 # Multi-cluster federation guide
 ├── day-two.md                         # Operational procedures
 ├── GatewaySpire.md                    # Ingress Gateway deep dive
-├── integration-keycloak.md            # Keycloak OIDC integration
+├── integration-keycloak-for-repo.md   # Keycloak + SPIFFE integration guide
+├── integration-keycloak.md            # Keycloak OIDC integration (legacy)
 ├── register-httpbin.sh                # Manual registration script (legacy)
 └── istio-1.28.3/                      # Istio distribution
 ```
@@ -309,24 +311,72 @@ kubectl exec -n spire-server spire-server-0 -- /opt/spire/bin/spire-server entry
 kubectl apply -f manifest/sleep-spire.yaml
 ```
 
-### Checking JWT and testing exchange
+## Step 7: Keycloak + SPIFFE Integration (Optional)
+
+### Deploy Keycloak
 
 ```bash
-# Since the debug container is plain Ubuntu, download the SPIRE agent binary first:
-kubectl exec -n apps debug-spire -c tools -- bash -c "apt-get update && apt-get install -y wget && wget https://github.com/spiffe/spire/releases/download/v1.11.0/spire-1.11.0-linux-x86_64-glibc.tar.gz && tar -xvf spire-1.11.0-linux-x86_64-glibc.tar.gz -C /tmp --strip-components=2 spire-1.11.0/bin/spire-agent"
+kubectl apply -f manifest/keycloak-for-spiffee.yaml
+```
 
-# Fetch a JWT from the SPIRE agent
-kubectl exec -n apps debug-spire -c tools -- /tmp/spire-agent api fetch jwt \
-       -audience "spire" \
-       -socketPath /run/secrets/workload-spiffe-uds/spire-agent.sock 
+### Configure Keycloak
 
-# Test token exchange with Keycloak
+#### 1. Update Keycloak Deployment
+Ensure your `manifest/keycloak-for-spiffee.yaml` includes:
+
+```yaml
+- name: KC_FEATURES
+  value: "token-exchange,token-exchange-standard:v2,admin-fine-grained-authz:v1,spiffe,client-auth-federated"
+- name: KC_TRUSTSTORE_PATHS
+  value: "/var/run/secrets/spire-bundle/root-cert.pem"
+```
+
+#### 2. Configure SPIFFE Identity Provider
+- Go to **Identity Providers** → **Add provider** → **SPIFFE**
+- **Alias**: `spiffe`
+- **Bundle Endpoint**: `http://spire-spiffe-oidc-discovery-provider.spire-server.svc.cluster.local/keys`
+- **Accept Untrusted Certificates**: Enable for testing (or use `KC_TRUSTSTORE_PATHS`)
+
+#### 3. Create Workload Client
+- **Client ID**: `workload-client` (or any name)
+- **Client Authentication**: **ON** (Confidential)
+- **Service Accounts Roles**: **ON**
+- **Credentials Tab**:
+  - **Client Authenticator**: **Federated Json Web Token**
+  - **Identity Provider Alias**: `spiffe`
+  - **Subject**: `spiffe://example.org/ns/apps/sa/debug-spire`
+
+### Testing the Flow
+
+**Important**: 
+- The `audience` when fetching JWT must be the Keycloak Realm URL
+- The `client_id` in the request must be the SPIFFE ID (not the Keycloak Client ID)
+
+```bash
+# 1. Fetch JWT SVID with correct audience
+TOKEN=$(kubectl exec -n apps debug-spire -c tools -- /opt/spire/bin/spire-agent api fetch jwt \
+  -audience http://keycloak.spire-server.svc:8080/realms/spire-demo \
+  -socketPath /run/secrets/workload-spiffe-uds/socket \
+  -format json | jq -r '.svids[0].token')
+
+# 2. Exchange SVID for Keycloak Token
 kubectl exec -n apps debug-spire -c tools -- curl -X POST -s http://keycloak.spire-server.svc:8080/realms/spire-demo/protocol/openid-connect/token \
     -d "grant_type=client_credentials" \
     -d "client_id=spiffe://example.org/ns/apps/sa/debug-spire" \
     -d "client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-spiffe" \
-    -d "client_assertion=$(kubectl exec -n apps debug-spire -c tools -- /tmp/spire-agent api fetch jwt -audience "http://keycloak.spire-server.svc:8080/realms/spire-demo" -socketPath /run/secrets/workload-spiffe-uds/spire-agent.sock -format json | jq -r '.token')" | jq .
+    -d "client_assertion=$TOKEN" | jq .
 ```
+
+### Authenticating Different Workloads
+
+To authenticate a different workload (e.g., `spiffe://example.org/ns/apps/sa/another-app`):
+
+1. Create a new Keycloak Client
+2. Set **Credentials → Subject** to the new SPIFFE ID
+3. Set **Credentials → Identity Provider Alias** to `spiffe`
+4. Use the SPIFFE ID as `client_id` in the token request
+
+For detailed configuration, see `integration-keycloak-for-repo.md`.
 
 ### Useful commands for SPIRE Server
 
