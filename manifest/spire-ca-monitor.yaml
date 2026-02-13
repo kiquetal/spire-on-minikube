@@ -55,7 +55,7 @@ data:
       fi
       
       kubectl exec -n "$SPIRE_NAMESPACE" "$server_pod" -- \
-        /opt/spire/bin/spire-server bundle show -format spiffe 2>/dev/null || return 1
+        /opt/spire/bin/spire-server bundle show -format pem 2>/dev/null || return 1
     }
     
     echo "Fetching current CA bundle from SPIRE server..."
