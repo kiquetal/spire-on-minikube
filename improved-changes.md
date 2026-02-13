@@ -213,11 +213,24 @@ kubectl logs -n istio-ingress <spire-ca-monitor-pod>
 The `spire-ca-monitor` CronJob detects CA changes and can automatically update the ConfigMap:
 
 **Key features:**
-- Runs every 5 minutes (configurable)
+- Runs daily at 17:43 UTC (1 hour before SPIRE CA expiry)
 - Fetches current CA bundle from SPIRE server using `spire-server bundle show -format pem`
 - Compares SHA256 hash with stored bundle in `spire-bundle` ConfigMap
 - Detects when CA rotation occurs or SPIRE restarts with new CA
 - Can automatically update the ConfigMap (currently commented out for evaluation)
+
+**Schedule Calculation:**
+SPIRE rotates CA certificates every 24 hours. The CronJob schedule is calculated to run 1 hour before the newest certificate expires:
+
+```bash
+# Analyze current certificate expiration
+kubectl exec -n spire-server spire-server-0 -c spire-server -- \
+  /opt/spire/bin/spire-server bundle show -format pem | \
+  openssl x509 -noout -enddate
+
+# Example output: notAfter=Feb 14 18:43:49 2026 GMT
+# CronJob runs at: 17:43 UTC (1 hour before expiry)
+```
 
 **Deployment:**
 ```bash
