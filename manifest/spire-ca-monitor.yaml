@@ -40,15 +40,15 @@ data:
     #!/bin/bash
     set -e
     
-    SPIRE_NAMESPACE="${SPIRE_NAMESPACE:-spire}"
+    SPIRE_NAMESPACE="${SPIRE_NAMESPACE:-spire-server}"
     TARGET_NAMESPACE="${TARGET_NAMESPACE:-istio-ingress}"
-    CONFIGMAP_NAME="${CONFIGMAP_NAME:-spire-ca-bundle}"
+    CONFIGMAP_NAME="${CONFIGMAP_NAME:-spire-bundle}"
     
     echo "=== SPIRE CA Monitor ==="
     echo "Timestamp: $(date)"
     
     get_ca_bundle() {
-      local server_pod=$(kubectl get pod -n "$SPIRE_NAMESPACE" -l app=spire-server -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+      local server_pod=$(kubectl get pod -n "$SPIRE_NAMESPACE" -l app.kubernetes.io/component=server -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
       if [ -z "$server_pod" ]; then
         echo "ERROR: No spire-server pod found" >&2
         return 1
@@ -68,7 +68,8 @@ data:
     echo "Current SPIRE CA hash: $current_hash"
     
     echo "Checking ConfigMap: $TARGET_NAMESPACE/$CONFIGMAP_NAME"
-    if stored_hash=$(kubectl get configmap "$CONFIGMAP_NAME" -n "$TARGET_NAMESPACE" -o jsonpath='{.data.bundle-hash}' 2>/dev/null); then
+    if stored_bundle=$(kubectl get configmap "$CONFIGMAP_NAME" -n "$TARGET_NAMESPACE" -o jsonpath='{.data.root-cert\.pem}' 2>/dev/null); then
+      stored_hash=$(echo "$stored_bundle" | sha256sum | cut -d' ' -f1)
       echo "Stored CA hash: $stored_hash"
       
       if [ "$current_hash" = "$stored_hash" ]; then
@@ -80,20 +81,18 @@ data:
         echo "  New hash: $current_hash"
         # Uncomment below to enable automatic ConfigMap update:
         # kubectl create configmap "$CONFIGMAP_NAME" \
-        #   --from-literal=bundle.crt="$current_bundle" \
-        #   --from-literal=bundle-hash="$current_hash" \
+        #   --from-literal=root-cert.pem="$current_bundle" \
         #   --dry-run=client -o yaml | \
         #   kubectl apply -n "$TARGET_NAMESPACE" -f -
         # echo "ConfigMap updated successfully"
         exit 0
       fi
     else
-      echo "⚠ ConfigMap does not exist yet"
+      echo "⚠ ConfigMap does not exist or root-cert.pem key not found"
       echo "New CA hash would be: $current_hash"
       # Uncomment below to enable automatic ConfigMap creation:
       # kubectl create configmap "$CONFIGMAP_NAME" \
-      #   --from-literal=bundle.crt="$current_bundle" \
-      #   --from-literal=bundle-hash="$current_hash" \
+      #   --from-literal=root-cert.pem="$current_bundle" \
       #   -n "$TARGET_NAMESPACE"
       # echo "ConfigMap created successfully"
       exit 0
@@ -123,11 +122,11 @@ spec:
             command: ["/bin/bash", "/scripts/monitor.sh"]
             env:
             - name: SPIRE_NAMESPACE
-              value: "spire"
+              value: "spire-server"
             - name: TARGET_NAMESPACE
               value: "istio-ingress"
             - name: CONFIGMAP_NAME
-              value: "spire-ca-bundle"
+              value: "spire-bundle"
             volumeMounts:
             - name: scripts
               mountPath: /scripts
