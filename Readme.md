@@ -338,6 +338,22 @@ kubectl create configmap spire-bundle \
   -n istio-ingress
 ```
 
+### Deploy CA Bundle Monitor (Recommended)
+SPIRE rotates CA certificates every 24 hours. Deploy a CronJob to automatically sync the bundle to the istio-ingress namespace:
+
+```bash
+# Deploy the monitor CronJob
+kubectl apply -f manifest/spire-ca-monitor.yaml
+```
+
+The CronJob runs daily at 17:43 UTC (1 hour before certificate expiry). To calculate the optimal schedule for your environment:
+
+```bash
+./scripts/analyze-cert-schedule.sh
+```
+
+See `improved-changes.md` section 5 for detailed CA rotation behavior and monitoring configuration.
+
 ## Step 4: Verify Installation
 
 ### Check Pods

@@ -220,16 +220,28 @@ The `spire-ca-monitor` CronJob detects CA changes and can automatically update t
 - Can automatically update the ConfigMap (currently commented out for evaluation)
 
 **Schedule Calculation:**
-SPIRE rotates CA certificates every 24 hours. The CronJob schedule is calculated to run 1 hour before the newest certificate expires:
+SPIRE rotates CA certificates every 24 hours. The CronJob schedule is calculated to run 1 hour before the newest certificate expires.
+
+Use the provided script to analyze current certificate expiration and calculate the optimal schedule:
 
 ```bash
-# Analyze current certificate expiration
-kubectl exec -n spire-server spire-server-0 -c spire-server -- \
-  /opt/spire/bin/spire-server bundle show -format pem | \
-  openssl x509 -noout -enddate
+./scripts/analyze-cert-schedule.sh
+```
 
-# Example output: notAfter=Feb 14 18:43:49 2026 GMT
-# CronJob runs at: 17:43 UTC (1 hour before expiry)
+Example output:
+```
+=== SPIRE CA Certificate Analysis ===
+Certificate #1:
+  Expires at: Feb 13 18:43:47 2026 GMT
+Certificate #2:
+  Expires at: Feb 14 06:43:48 2026 GMT
+Certificate #3:
+  Expires at: Feb 14 18:43:49 2026 GMT
+
+=== Recommended CronJob Schedule ===
+Optimal run time: 2026-02-14 14:43:49 -03
+CronJob schedule: "43 17 * * *"
+This runs daily at 17:43 UTC, 1 hour before cert expiry
 ```
 
 **Deployment:**
