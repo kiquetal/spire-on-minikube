@@ -240,7 +240,24 @@ spire-server:
     storageClass: standard
 ```
 
-This preserves the CA private key and SQLite database across restarts, preventing CA regeneration.
+**Important:** Persistence prevents CA regeneration on restarts, but **does NOT eliminate the need for the CA monitor CronJob**. The CronJob is a permanent infrastructure component because:
+
+1. **Normal CA rotation occurs every 24 hours** (security best practice)
+2. SPIRE automatically generates new CA certificates and removes expired ones
+3. The `spire-bundle` ConfigMap in `istio-ingress` namespace doesn't auto-update
+4. Without synchronization, the ingress gateway will eventually lose trust
+
+### CA Rotation Lifecycle
+
+![SPIRE CA Rotation Flow](spire-ca-rotation-flow.svg)
+
+The diagram above shows the continuous cycle:
+- **Day 1**: Initial CA bundle is manually created
+- **Day 2**: SPIRE rotates CA (24h period), monitor detects change and updates ConfigMap
+- **Day 3**: Another rotation occurs, monitor keeps ConfigMap synchronized
+- **Ongoing**: This cycle repeats indefinitely
+
+**Key takeaway:** The CA monitor CronJob is not a workaround - it's a required component for keeping the ingress gateway's trust bundle synchronized with SPIRE's rotating CA certificates.
 
 ## 6. Verification Steps for Tomorrow
 
