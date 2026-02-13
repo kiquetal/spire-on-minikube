@@ -13,7 +13,8 @@ sidecarInjectorWebhook:
         # Enable SPIRE management for the pod
         spiffe.io/spire-managed-identity: "true"
       spec:
-        containers:
+        # For K8s 1.29+, the sidecar is a native sidecar (initContainer)
+        initContainers:
         - name: istio-proxy
           volumeMounts:
           - name: workload-socket

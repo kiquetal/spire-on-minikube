@@ -1,11 +1,11 @@
 # SPIRE + Istio Integration: Improved Implementation Guide
 
-This document details the specific, verified changes required to integrate SPIRE as the identity provider for Istio 1.28. These changes replace legacy or broken configurations with the official SDS-based (Secret Discovery Service) approach.
+This document details the specific, verified changes required to integrate SPIRE as the identity provider for Istio 1.28 on Kubernetes 1.30+. These changes replace legacy or broken configurations with the official SDS-based (Secret Discovery Service) approach.
 
 ## 1. Corrected Istio Helm Values
 **File:** `manifest/istio-spire-values-fixed.yaml`
 
-The critical change here is moving the socket configuration to `proxyMetadata` and ensuring the sidecar template automatically labels pods for SPIRE registration.
+The critical change here is moving the socket configuration to `proxyMetadata` and using `initContainers` for native sidecar compatibility.
 
 ```yaml
 meshConfig:
@@ -22,7 +22,8 @@ sidecarInjectorWebhook:
         # REQUIRED: Trigger SPIRE Controller Manager registration
         spiffe.io/spire-managed-identity: "true"
       spec:
-        containers:
+        # For K8s 1.29+, the sidecar is a native sidecar (initContainer)
+        initContainers:
         - name: istio-proxy
           volumeMounts:
           - name: workload-socket
@@ -35,10 +36,10 @@ sidecarInjectorWebhook:
               readOnly: true
 ```
 
-### Key Differences from Legacy:
-*   **Removed `caCertificatesPem`**: Never use a file path here. Istio now fetches the trust bundle automatically via the SPIRE socket (SDS).
-*   **Automated Labeling**: The `labels` section in the template ensures workloads are automatically eligible for SPIRE identities.
-*   **Removed `spire-bundle` Volume**: Redundant. The root CA is delivered via the same CSI socket as the SVIDs.
+### Key Differences:
+*   **Native Sidecar Support**: Uses `initContainers` to merge with Istio's native sidecar (required for K8s 1.29+).
+*   **Removed `caCertificatesPem`**: Istio now fetches the trust bundle automatically via the SPIRE socket (SDS).
+*   **Automated Labeling**: The `labels` section in the template ensures workloads are automatically registered by SPIRE.
 
 ---
 
@@ -113,32 +114,38 @@ spec:
 ---
 
 ## 4. Simplified Workload Template
-**File:** `manifest/workload-template.yaml`
+**File:** `manifest/httpbin-simple-final.yaml`
 
-Because we have centralized the SPIRE configuration in `istiod`, adding SPIRE to a new workload is now as simple as adding **one annotation**:
+Because we have centralized the SPIRE configuration in `istiod`, adding SPIRE to a new workload is now simple:
 
 ```yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: httpbin-simple
+  namespace: apps
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: simple-app
+  name: httpbin-simple
   namespace: apps
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: simple-app
+      app: httpbin-simple
   template:
     metadata:
       labels:
-        app: simple-app
+        app: httpbin-simple
       annotations:
         # This triggers the 'spire' template we defined in Helm values
         inject.istio.io/templates: "sidecar,spire"
     spec:
-      serviceAccountName: simple-app
+      serviceAccountName: httpbin-simple
       containers:
-      - name: app
+      - name: httpbin
         image: docker.io/kennethreitz/httpbin
         ports:
         - containerPort: 80
@@ -162,10 +169,9 @@ kubectl rollout restart deployment istio-ingress -n istio-ingress
 ```
 
 ### Step B: Validate SPIFFE Headers
-Run a curl through the Ingress to a sidecar-enabled backend (e.g., `httpbin-test`):
+Run a curl through the Ingress to a sidecar-enabled backend:
 ```bash
-kubectl exec -n apps $(kubectl get pod -n apps -l app=sleep-spire -o jsonpath='{.items[0].metadata.name}') \
-  -c sleep -- curl -s http://<INGRESS_IP>/headers
+kubectl exec -n apps sleep-spire-xxxx -c sleep -- curl -s http://<INGRESS_IP>/headers
 ```
 
 **Successful Output should include:**
