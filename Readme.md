@@ -121,6 +121,50 @@ See `federated-spire.md` for detailed federation design.
 - **Observability**: SPIRE metrics exposed via Prometheus, Istio telemetry via standard mesh tools
 - **Day 2 Operations**: See `day-two.md` for cluster name changes, certificate verification, and debugging
 
+### SPIRE Integration Architecture
+
+The following diagram illustrates how SPIRE integrates with Istio to provide workload identity for both sidecars and the ingress gateway:
+
+![SPIRE Integration Flow](https://mermaid.ink/svg/pako:eNqtVV1r20gUfdevuHRpnyprExpow7ag2kkQ1MVEIbtg8jCWruTZyjNi5sqpwT--zIessRqVwq5fbPmee-73Ua1Yu4WHzxEAgO42tX1-la-y-xvIRKWYJtUV1Cl8ZTHmk-drB8hR7VH9tVHJp0zrDjXkj9lCPw3I1CPTGgVZ4ILhToocCaQAZMUWhCxxcJnnmfeZ5xksFO8jLGUnSIOWxTck4IIktLIMgs2XvaMUpGTToIIlE6z2BGlHMlZYc02KEZcC9pzB_D5M-HMnygY9j3swdBWvl6y1LA-q0wT3UhLMU-eIooxGDcw0cdknAquGiaB_1liu3ZclNY3kBcKC60LuUR3gjQ87HUHUCrWGO0b4zA5w28jnIMSdo4cR7ClArJT8fljfiL08gP0NXLyEy23H-5G79tth2NQT1YlEY6GQdPIs1bdGsjLWLa8qjLtwPtmd767va8CxZ-qMR7dcYbyxuMkO5LzEgilbOcSwJWo3XMBKlkMf0rZd9wYzDcYFqmA_HYVvQk9omxGA_of6XxpgiYI4mVHbnQru6zFbXKz_mV39-SE2v20cx3idJPid7doGZ1LVidAJN2OOuRtzotn5H09npJe_S8ra1nL51g0sNlM_RncJ7sGyKSkpLlDRrMXdqO7Xr-ElUTFDEViYa9SR0xaI40_HlAg1aXgDTliOkKfOnlr7Ssk9L43g2HkcjVhETgSsfa6QEWq4EaS4dc9D-lW3abjeGoPL_5TkS2cVeV2yrl6GrHScBOp4OpNoUBGXSC8ex9P-R-FZWdDffm0gXWXH_jKj8GYsbJCec5DvyQIbk4sT4TGNO3AD6_fu6PbM2_tkzYXowfk0u-DWfqcdQTMm6_ScvyjhDOEz-LmEy8hfum8SqypeDM59CbuHL3mwbj_1xdqfOW3Not7e3sA4g2D3rcMja3hptuy817-AjVNyy9G5t1E0vBqCzenUmH8CMuZOhZDEhsP6Kgkv1l_YBptrcHc_49Ir7c6-JsuY-8Z-JNW5mx5oroGLf7GgmRUY40u4axtT2Uftgr-1bE-neJf_LV5rah7CFbZaN6KCzVERr3hh4q96uRkqhXhml4HXNSp9Pkib2hiQ3XmBpkODRicq3jTXf-BFdVVVoSWdspj9nzItpyx-USas_X46c1VV7_AizMXfxJTZ3HdP_b66wg8j4-WUMdzhEPID6A02Sw)
+
+#### Key Integration Points
+
+**1. SPIRE Infrastructure (Blue)**
+- **SPIRE Server**: Central authority that issues X.509-SVIDs with SPIFFE IDs
+- **SPIRE Agent**: DaemonSet running on each node, attests workloads and delivers identities
+- **CSI Driver**: Mounts the SPIRE Workload API socket into pods automatically
+- **Controller Manager**: Automates workload registration using `ClusterSPIFFEID` CRDs
+- **Bundle ConfigMap**: Contains the trust root CA certificate for validating identities
+
+**2. Sidecar Integration (httpbin example)**
+- Pod labeled with `spiffe.io/spire-managed-identity: "true"` triggers auto-registration
+- Annotation `inject.istio.io/templates: "sidecar,spire"` applies custom Istio template
+- CSI driver mounts socket at `/run/secrets/workload-spiffe-uds/socket`
+- Envoy sidecar fetches X.509-SVID via Workload API (SDS)
+- Identity: `spiffe://example.org/ns/apps/sa/httpbin`
+
+**3. Gateway Integration (Ingress Gateway)**
+- Gateway deployment patched with SPIRE configuration
+- Requires both socket mount (for identity) and bundle mount (for trust validation)
+- Annotation `proxy.istio.io/config` with `caCertificatesPem` points to trust root
+- Environment variable `ISTIO_META_WORKLOAD_SOCKET_PATH` configures socket location
+- Identity: `spiffe://example.org/ns/istio-ingress/sa/istio-ingress`
+
+**4. mTLS Communication**
+- Gateway and sidecar both obtain SVIDs from SPIRE Agent
+- Both validate peer certificates using the shared trust bundle
+- Istio configures Envoy proxies for automatic mTLS with SPIFFE identities
+- No manual certificate management required
+
+**Key Differences: Sidecar vs Gateway**
+| Aspect | Sidecar | Gateway |
+|--------|---------|---------|
+| **Configuration** | Automatic via Istio template | Manual patch required |
+| **Socket Mount** | CSI driver via template | CSI driver + explicit volumeMount |
+| **Trust Bundle** | Fetched via socket (SDS) | Requires ConfigMap mount + annotation |
+| **Registration** | Auto via `ClusterSPIFFEID` | Requires explicit `ClusterSPIFFEID` |
+| **Complexity** | Low (annotation-based) | Medium (patch + ConfigMap sync) |
+
 ### Integration Points
 
 #### Keycloak OIDC (Optional)
