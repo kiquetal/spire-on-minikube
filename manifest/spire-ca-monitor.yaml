@@ -1,0 +1,138 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: spire-ca-monitor
+  namespace: istio-ingress
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: spire-ca-monitor
+rules:
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get", "list"]
+- apiGroups: [""]
+  resources: ["pods", "pods/exec"]
+  verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: spire-ca-monitor
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: spire-ca-monitor
+subjects:
+- kind: ServiceAccount
+  name: spire-ca-monitor
+  namespace: istio-ingress
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: spire-ca-monitor-script
+  namespace: istio-ingress
+data:
+  monitor.sh: |
+    #!/bin/bash
+    set -e
+    
+    SPIRE_NAMESPACE="${SPIRE_NAMESPACE:-spire}"
+    TARGET_NAMESPACE="${TARGET_NAMESPACE:-istio-ingress}"
+    CONFIGMAP_NAME="${CONFIGMAP_NAME:-spire-ca-bundle}"
+    
+    echo "=== SPIRE CA Monitor ==="
+    echo "Timestamp: $(date)"
+    
+    get_ca_bundle() {
+      local server_pod=$(kubectl get pod -n "$SPIRE_NAMESPACE" -l app=spire-server -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+      if [ -z "$server_pod" ]; then
+        echo "ERROR: No spire-server pod found" >&2
+        return 1
+      fi
+      
+      kubectl exec -n "$SPIRE_NAMESPACE" "$server_pod" -- \
+        /opt/spire/bin/spire-server bundle show -format spiffe 2>/dev/null || return 1
+    }
+    
+    echo "Fetching current CA bundle from SPIRE server..."
+    if ! current_bundle=$(get_ca_bundle); then
+      echo "ERROR: Failed to retrieve CA bundle from SPIRE server"
+      exit 1
+    fi
+    
+    current_hash=$(echo "$current_bundle" | sha256sum | cut -d' ' -f1)
+    echo "Current SPIRE CA hash: $current_hash"
+    
+    echo "Checking ConfigMap: $TARGET_NAMESPACE/$CONFIGMAP_NAME"
+    if stored_hash=$(kubectl get configmap "$CONFIGMAP_NAME" -n "$TARGET_NAMESPACE" -o jsonpath='{.data.bundle-hash}' 2>/dev/null); then
+      echo "Stored CA hash: $stored_hash"
+      
+      if [ "$current_hash" = "$stored_hash" ]; then
+        echo "✓ CA bundle is up to date - no changes detected"
+        exit 0
+      else
+        echo "✗ CA bundle has CHANGED!"
+        echo "  Old hash: $stored_hash"
+        echo "  New hash: $current_hash"
+        # Uncomment below to enable automatic ConfigMap update:
+        # kubectl create configmap "$CONFIGMAP_NAME" \
+        #   --from-literal=bundle.crt="$current_bundle" \
+        #   --from-literal=bundle-hash="$current_hash" \
+        #   --dry-run=client -o yaml | \
+        #   kubectl apply -n "$TARGET_NAMESPACE" -f -
+        # echo "ConfigMap updated successfully"
+        exit 0
+      fi
+    else
+      echo "⚠ ConfigMap does not exist yet"
+      echo "New CA hash would be: $current_hash"
+      # Uncomment below to enable automatic ConfigMap creation:
+      # kubectl create configmap "$CONFIGMAP_NAME" \
+      #   --from-literal=bundle.crt="$current_bundle" \
+      #   --from-literal=bundle-hash="$current_hash" \
+      #   -n "$TARGET_NAMESPACE"
+      # echo "ConfigMap created successfully"
+      exit 0
+    fi
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: spire-ca-monitor
+  namespace: istio-ingress
+spec:
+  schedule: "*/5 * * * *"  # Every 5 minutes
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: spire-ca-monitor
+        spec:
+          serviceAccountName: spire-ca-monitor
+          restartPolicy: OnFailure
+          containers:
+          - name: monitor
+            image: bitnami/kubectl:latest
+            command: ["/bin/bash", "/scripts/monitor.sh"]
+            env:
+            - name: SPIRE_NAMESPACE
+              value: "spire"
+            - name: TARGET_NAMESPACE
+              value: "istio-ingress"
+            - name: CONFIGMAP_NAME
+              value: "spire-ca-bundle"
+            volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+          volumes:
+          - name: scripts
+            configMap:
+              name: spire-ca-monitor-script
+              defaultMode: 0755
