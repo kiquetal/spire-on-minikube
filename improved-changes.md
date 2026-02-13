@@ -153,7 +153,96 @@ spec:
 
 ---
 
-## 5. Verification Steps for Tomorrow
+## 5. SPIRE CA Rotation and Bundle Management
+
+### Understanding SPIRE CA Rotation
+
+SPIRE automatically rotates its CA certificate to maintain security. The rotation behavior is determined by the certificate validity period:
+
+**How the rotation period was discovered:**
+```bash
+# Check certificate validity from the bundle
+kubectl exec -n spire-server spire-server-0 -c spire-server -- \
+  /opt/spire/bin/spire-server bundle show -format pem | openssl x509 -noout -dates
+
+# Output shows:
+# notBefore=Feb 12 18:43:37 2026 GMT
+# notAfter=Feb 13 18:43:47 2026 GMT
+```
+
+This reveals a **24-hour validity period** (with 10 seconds grace). SPIRE generates a new CA certificate approximately every 24 hours.
+
+### CA Bundle Structure
+
+The `spire-bundle` ConfigMap contains **multiple CA certificates** (typically 5) in a single PEM file:
+
+```bash
+# Count certificates in the bundle
+kubectl get configmap spire-bundle -n istio-ingress -o jsonpath='{.data.root-cert\.pem}' | \
+  grep -c "BEGIN CERTIFICATE"
+# Output: 5
+```
+
+**Why multiple certificates?**
+- SPIRE keeps old CA certificates in the bundle during rotation
+- This provides a grace period where workloads with SVIDs signed by old CAs remain trusted
+- Prevents service disruption during CA transitions
+- Old certificates are eventually removed after expiration
+
+### The Synchronization Problem
+
+**Without persistence configured**, when minikube or SPIRE pods restart:
+1. SPIRE generates a completely new CA (new trust root)
+2. The `spire-bundle` ConfigMap in `istio-ingress` namespace becomes stale
+3. Eventually all old CAs expire from SPIRE's current bundle
+4. mTLS breaks because there's no common trusted CA
+
+**Current state detection:**
+```bash
+# Compare current SPIRE CA with stored bundle
+kubectl logs -n istio-ingress <spire-ca-monitor-pod>
+
+# Example output showing mismatch:
+# Current SPIRE CA hash: 76b5b63cb5c6000afdbc7a1524ec2883fe579fb3e96554141af352ae184b9b8a
+# Stored CA hash: c98acb18cc60858af5da752d68aec133d7ff94250c8b5a2561deac888877ad2e
+# ✗ CA bundle has CHANGED!
+```
+
+### Automated Monitoring Solution
+
+The `spire-ca-monitor` CronJob detects CA changes and can automatically update the ConfigMap:
+
+**Key features:**
+- Runs every 5 minutes (configurable)
+- Fetches current CA bundle from SPIRE server using `spire-server bundle show -format pem`
+- Compares SHA256 hash with stored bundle in `spire-bundle` ConfigMap
+- Detects when CA rotation occurs or SPIRE restarts with new CA
+- Can automatically update the ConfigMap (currently commented out for evaluation)
+
+**To enable automatic updates**, uncomment the update section in `manifest/spire-ca-monitor.yaml`:
+```bash
+# kubectl create configmap "$CONFIGMAP_NAME" \
+#   --from-literal=root-cert.pem="$current_bundle" \
+#   --dry-run=client -o yaml | \
+#   kubectl apply -n "$TARGET_NAMESPACE" -f -
+```
+
+### Long-term Solution: Persistence
+
+For production environments, configure persistent storage for SPIRE Server:
+
+```yaml
+# In spire-values.yaml
+spire-server:
+  persistence:
+    enabled: true
+    size: 1Gi
+    storageClass: standard
+```
+
+This preserves the CA private key and SQLite database across restarts, preventing CA regeneration.
+
+## 6. Verification Steps for Tomorrow
 
 ### Step A: Apply Identity Infrastructure
 ```bash
