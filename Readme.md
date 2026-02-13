@@ -324,6 +324,20 @@ spec:
 EOF
 ```
 
+### Create SPIRE Bundle ConfigMap for Istio Ingress
+Export the SPIRE CA bundle and create a ConfigMap in the `istio-ingress` namespace. This is required for the Ingress Gateway to validate backend certificates.
+
+```bash
+# Export CA bundle from SPIRE Server
+kubectl exec -n spire-server spire-server-0 -c spire-server -- \
+  /opt/spire/bin/spire-server bundle show -format pem > /tmp/root-cert.pem
+
+# Create ConfigMap in istio-ingress namespace
+kubectl create configmap spire-bundle \
+  --from-file=root-cert.pem=/tmp/root-cert.pem \
+  -n istio-ingress
+```
+
 ## Step 4: Verify Installation
 
 ### Check Pods
