@@ -219,12 +219,26 @@ The `spire-ca-monitor` CronJob detects CA changes and can automatically update t
 - Detects when CA rotation occurs or SPIRE restarts with new CA
 - Can automatically update the ConfigMap (currently commented out for evaluation)
 
+**Deployment:**
+```bash
+kubectl apply -f manifest/spire-ca-monitor.yaml
+```
+
 **To enable automatic updates**, uncomment the update section in `manifest/spire-ca-monitor.yaml`:
 ```bash
 # kubectl create configmap "$CONFIGMAP_NAME" \
 #   --from-literal=root-cert.pem="$current_bundle" \
 #   --dry-run=client -o yaml | \
 #   kubectl apply -n "$TARGET_NAMESPACE" -f -
+```
+
+**Monitor logs:**
+```bash
+# View recent CronJob executions
+kubectl get jobs -n istio-ingress -l app=spire-ca-monitor
+
+# Check logs from latest run
+kubectl logs -n istio-ingress -l app=spire-ca-monitor --tail=50
 ```
 
 ### Long-term Solution: Persistence
