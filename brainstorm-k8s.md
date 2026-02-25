@@ -187,6 +187,568 @@ spec:
 - You need different certificate lifecycles for different purposes
 - You want defense in depth with multiple security layers
 
+---
+
+## SPIRE CA Certificate Setup Process
+
+This diagram shows the complete process of creating and configuring CA certificates for SPIRE using cert-manager.
+
+![SPIRE CA Setup Process](images/spire-ca-setup-process.png)
+
+---
+
+## Step-by-Step: SPIRE Integration with cert-manager
+
+### Prerequisites
+
+- Kubernetes cluster (minikube, kind, or production cluster)
+- kubectl configured
+- cert-manager installed
+
+### Step 1: Install cert-manager
+
+```bash
+# Install cert-manager using kubectl
+kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.0/cert-manager.yaml
+
+# Verify installation
+kubectl get pods -n cert-manager
+kubectl get crd | grep cert-manager
+```
+
+### Step 2: Create SPIRE Namespace
+
+```bash
+kubectl create namespace spire
+```
+
+### Step 3: Create Self-Signed ClusterIssuer
+
+This issuer will create the root CA certificate for SPIRE.
+
+```yaml
+# selfsigned-issuer.yaml
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: selfsigned-issuer
+spec:
+  selfSigned: {}
+```
+
+```bash
+kubectl apply -f selfsigned-issuer.yaml
+```
+
+### Step 4: Create Root CA Certificate
+
+This is the trust root for your SPIRE deployment.
+
+```yaml
+# spire-root-ca.yaml
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: spire-root-ca
+  namespace: spire
+spec:
+  isCA: true
+  commonName: spire-root-ca
+  secretName: spire-root-ca
+  duration: 87600h  # 10 years
+  renewBefore: 43800h  # Renew 5 years before expiry
+  subject:
+    organizations:
+      - "SPIRE"
+  issuerRef:
+    name: selfsigned-issuer
+    kind: ClusterIssuer
+    group: cert-manager.io
+  privateKey:
+    algorithm: RSA
+    size: 4096
+```
+
+```bash
+kubectl apply -f spire-root-ca.yaml
+
+# Wait for certificate to be ready
+kubectl wait --for=condition=Ready certificate/spire-root-ca -n spire --timeout=60s
+
+# Verify the certificate
+kubectl get certificate -n spire
+kubectl describe certificate spire-root-ca -n spire
+```
+
+### Step 5: Create CA Issuer from Root Certificate
+
+Now create an issuer that uses the root CA to sign other certificates.
+
+```yaml
+# spire-ca-issuer.yaml
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: spire-ca-issuer
+  namespace: spire
+spec:
+  ca:
+    secretName: spire-root-ca
+```
+
+```bash
+kubectl apply -f spire-ca-issuer.yaml
+```
+
+### Step 6: Create SPIRE Server Certificate
+
+This certificate will be used by the SPIRE server for TLS communication.
+
+```yaml
+# spire-server-cert.yaml
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: spire-server
+  namespace: spire
+spec:
+  secretName: spire-server-tls
+  duration: 8760h  # 1 year
+  renewBefore: 2920h  # Renew 4 months before expiry
+  subject:
+    organizations:
+      - "SPIRE"
+  commonName: spire-server
+  isCA: false
+  privateKey:
+    algorithm: RSA
+    size: 2048
+  usages:
+    - server auth
+    - client auth
+  dnsNames:
+    - spire-server
+    - spire-server.spire
+    - spire-server.spire.svc
+    - spire-server.spire.svc.cluster.local
+  issuerRef:
+    name: spire-ca-issuer
+    kind: Issuer
+    group: cert-manager.io
+```
+
+```bash
+kubectl apply -f spire-server-cert.yaml
+
+# Wait and verify
+kubectl wait --for=condition=Ready certificate/spire-server -n spire --timeout=60s
+kubectl get certificate -n spire
+```
+
+### Step 7: Verify Generated Secrets
+
+```bash
+# Check the root CA secret
+kubectl get secret spire-root-ca -n spire -o yaml
+
+# Check the server certificate secret
+kubectl get secret spire-server-tls -n spire -o yaml
+
+# Decode and inspect the root CA certificate
+kubectl get secret spire-root-ca -n spire -o jsonpath='{.data.tls\.crt}' | \
+  base64 -d | openssl x509 -noout -text
+
+# Decode and inspect the server certificate
+kubectl get secret spire-server-tls -n spire -o jsonpath='{.data.tls\.crt}' | \
+  base64 -d | openssl x509 -noout -text
+```
+
+### Step 8: Configure SPIRE Server
+
+Create a ConfigMap for SPIRE server configuration that references the certificates.
+
+```yaml
+# spire-server-configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: spire-server
+  namespace: spire
+data:
+  server.conf: |
+    server {
+      bind_address = "0.0.0.0"
+      bind_port = "8081"
+      trust_domain = "example.org"
+      data_dir = "/run/spire/data"
+      log_level = "DEBUG"
+      
+      ca_key_type = "rsa-2048"
+      ca_ttl = "24h"
+      default_x509_svid_ttl = "1h"
+      
+      # Use cert-manager provided CA
+      ca_subject = {
+        country = ["US"],
+        organization = ["SPIRE"],
+        common_name = "SPIRE Server CA",
+      }
+    }
+
+    plugins {
+      DataStore "sql" {
+        plugin_data {
+          database_type = "sqlite3"
+          connection_string = "/run/spire/data/datastore.sqlite3"
+        }
+      }
+
+      NodeAttestor "k8s_psat" {
+        plugin_data {
+          clusters = {
+            "example-cluster" = {
+              service_account_allow_list = ["spire:spire-agent"]
+            }
+          }
+        }
+      }
+
+      KeyManager "disk" {
+        plugin_data {
+          keys_path = "/run/spire/data/keys.json"
+        }
+      }
+
+      Notifier "k8sbundle" {
+        plugin_data {
+          namespace = "spire"
+          config_map = "spire-bundle"
+        }
+      }
+    }
+```
+
+### Step 9: Deploy SPIRE Server
+
+```yaml
+# spire-server-statefulset.yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: spire-server
+  namespace: spire
+  labels:
+    app: spire-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: spire-server
+  serviceName: spire-server
+  template:
+    metadata:
+      labels:
+        app: spire-server
+    spec:
+      serviceAccountName: spire-server
+      containers:
+      - name: spire-server
+        image: ghcr.io/spiffe/spire-server:1.8.0
+        args:
+          - -config
+          - /run/spire/config/server.conf
+        ports:
+        - containerPort: 8081
+          name: grpc
+        volumeMounts:
+        - name: spire-config
+          mountPath: /run/spire/config
+          readOnly: true
+        - name: spire-data
+          mountPath: /run/spire/data
+        - name: spire-server-tls
+          mountPath: /run/spire/certs
+          readOnly: true
+        - name: spire-root-ca
+          mountPath: /run/spire/ca
+          readOnly: true
+        livenessProbe:
+          httpGet:
+            path: /live
+            port: 8080
+          initialDelaySeconds: 15
+          periodSeconds: 60
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      volumes:
+      - name: spire-config
+        configMap:
+          name: spire-server
+      - name: spire-server-tls
+        secret:
+          secretName: spire-server-tls
+      - name: spire-root-ca
+        secret:
+          secretName: spire-root-ca
+  volumeClaimTemplates:
+  - metadata:
+      name: spire-data
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: spire-server
+  namespace: spire
+spec:
+  type: ClusterIP
+  ports:
+    - name: grpc
+      port: 8081
+      targetPort: 8081
+      protocol: TCP
+  selector:
+    app: spire-server
+```
+
+### Step 10: Create RBAC Resources
+
+```yaml
+# spire-server-rbac.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: spire-server
+  namespace: spire
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: spire-server-cluster-role
+rules:
+- apiGroups: [""]
+  resources: ["nodes"]
+  verbs: ["get"]
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list"]
+- apiGroups: ["authentication.k8s.io"]
+  resources: ["tokenreviews"]
+  verbs: ["create"]
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get", "list", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: spire-server-cluster-role-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: spire-server-cluster-role
+subjects:
+- kind: ServiceAccount
+  name: spire-server
+  namespace: spire
+```
+
+```bash
+kubectl apply -f spire-server-rbac.yaml
+kubectl apply -f spire-server-configmap.yaml
+kubectl apply -f spire-server-statefulset.yaml
+```
+
+### Step 11: Verify SPIRE Server
+
+```bash
+# Check pod status
+kubectl get pods -n spire
+
+# Check logs
+kubectl logs -n spire spire-server-0
+
+# Verify the server is using cert-manager certificates
+kubectl exec -n spire spire-server-0 -- ls -la /run/spire/certs
+kubectl exec -n spire spire-server-0 -- ls -la /run/spire/ca
+
+# Test SPIRE server health
+kubectl exec -n spire spire-server-0 -- /opt/spire/bin/spire-server healthcheck
+```
+
+### Step 12: Deploy SPIRE Agent
+
+```yaml
+# spire-agent-daemonset.yaml
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: spire-agent
+  namespace: spire
+  labels:
+    app: spire-agent
+spec:
+  selector:
+    matchLabels:
+      app: spire-agent
+  template:
+    metadata:
+      labels:
+        app: spire-agent
+    spec:
+      hostPID: true
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      serviceAccountName: spire-agent
+      containers:
+      - name: spire-agent
+        image: ghcr.io/spiffe/spire-agent:1.8.0
+        args:
+          - -config
+          - /run/spire/config/agent.conf
+        volumeMounts:
+        - name: spire-config
+          mountPath: /run/spire/config
+          readOnly: true
+        - name: spire-bundle
+          mountPath: /run/spire/bundle
+          readOnly: true
+        - name: spire-agent-socket
+          mountPath: /run/spire/sockets
+        - name: spire-token
+          mountPath: /var/run/secrets/tokens
+      volumes:
+      - name: spire-config
+        configMap:
+          name: spire-agent
+      - name: spire-bundle
+        configMap:
+          name: spire-bundle
+      - name: spire-agent-socket
+        hostPath:
+          path: /run/spire/sockets
+          type: DirectoryOrCreate
+      - name: spire-token
+        projected:
+          sources:
+          - serviceAccountToken:
+              path: spire-agent
+              expirationSeconds: 7200
+              audience: spire-server
+```
+
+### Step 13: Test Workload Registration
+
+```bash
+# Register a workload
+kubectl exec -n spire spire-server-0 -- \
+  /opt/spire/bin/spire-server entry create \
+  -spiffeID spiffe://example.org/ns/default/sa/default \
+  -parentID spiffe://example.org/ns/spire/sa/spire-agent \
+  -selector k8s:ns:default \
+  -selector k8s:sa:default
+
+# List entries
+kubectl exec -n spire spire-server-0 -- \
+  /opt/spire/bin/spire-server entry show
+
+# Verify agent can fetch SVIDs
+kubectl exec -n spire -it spire-agent-xxxxx -- \
+  /opt/spire/bin/spire-agent api fetch -socketPath /run/spire/sockets/agent.sock
+```
+
+### Step 14: Monitor Certificate Renewal
+
+```bash
+# Watch certificate status
+kubectl get certificate -n spire -w
+
+# Check certificate expiry dates
+kubectl get certificate -n spire -o custom-columns=\
+NAME:.metadata.name,\
+READY:.status.conditions[0].status,\
+EXPIRY:.status.notAfter
+
+# Set up alerts for certificate expiry
+kubectl apply -f - <<EOF
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cert-expiry-alert
+  namespace: spire
+data:
+  alert.yaml: |
+    - alert: SPIRECertificateExpiringSoon
+      expr: certmanager_certificate_expiration_timestamp_seconds{namespace="spire"} - time() < 2592000
+      for: 24h
+      annotations:
+        summary: "SPIRE certificate expiring in less than 30 days"
+EOF
+```
+
+## Troubleshooting
+
+### Certificate Not Ready
+
+```bash
+# Check certificate status
+kubectl describe certificate spire-root-ca -n spire
+
+# Check cert-manager logs
+kubectl logs -n cert-manager deploy/cert-manager -f
+
+# Check certificate request
+kubectl get certificaterequest -n spire
+kubectl describe certificaterequest -n spire <request-name>
+```
+
+### SPIRE Server Not Starting
+
+```bash
+# Check pod events
+kubectl describe pod -n spire spire-server-0
+
+# Check if certificates are mounted
+kubectl exec -n spire spire-server-0 -- ls -la /run/spire/certs
+kubectl exec -n spire spire-server-0 -- ls -la /run/spire/ca
+
+# Verify certificate validity
+kubectl exec -n spire spire-server-0 -- \
+  openssl x509 -in /run/spire/certs/tls.crt -noout -text
+```
+
+### Agent Cannot Connect to Server
+
+```bash
+# Check agent logs
+kubectl logs -n spire daemonset/spire-agent
+
+# Verify bundle configmap exists
+kubectl get configmap spire-bundle -n spire
+
+# Test connectivity
+kubectl exec -n spire spire-agent-xxxxx -- \
+  nc -zv spire-server.spire.svc.cluster.local 8081
+```
+
+## Key Takeaways
+
+1. **Root CA**: Use long-lived (10 years) self-signed certificate as SPIRE trust root
+2. **Server Certificate**: Use shorter-lived (1 year) certificate for SPIRE server TLS
+3. **Automatic Renewal**: cert-manager handles renewal automatically at 2/3 of lifetime
+4. **Mount Points**: Mount both root CA and server certificate to SPIRE server pods
+5. **Trust Bundle**: SPIRE publishes trust bundle to ConfigMap for agents to consume
+6. **Monitoring**: Always monitor certificate expiry dates and renewal status
+
 
 ---
 
