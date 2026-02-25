@@ -4,66 +4,7 @@
 
 This diagram illustrates the complete lifecycle of certificate management using cert-manager in a Kubernetes cluster, including integration with Istio service mesh and SPIRE for workload identity.
 
-```mermaid
-sequenceDiagram
-    participant User
-    participant K8s as Kubernetes API
-    participant CM as cert-manager
-    participant Issuer as Issuer/ClusterIssuer
-    participant CA as Certificate Authority
-    participant Istio as Istio Control Plane
-    participant SPIRE as SPIRE Server
-
-    Note over User,SPIRE: Initial Setup Phase
-    User->>K8s: Install cert-manager CRDs
-    User->>K8s: Deploy cert-manager controller
-    User->>K8s: Create Issuer/ClusterIssuer
-    Issuer->>CA: Register with CA (Let's Encrypt, Vault, etc)
-    
-    Note over User,SPIRE: Certificate Request Flow
-    User->>K8s: Create Certificate resource
-    K8s->>CM: Watch Certificate CRD
-    CM->>CM: Generate private key
-    CM->>CM: Create CSR (Certificate Signing Request)
-    CM->>Issuer: Submit CSR
-    Issuer->>CA: Forward CSR for signing
-    CA->>Issuer: Return signed certificate
-    Issuer->>CM: Provide signed certificate
-    CM->>K8s: Store cert + key in Secret
-    
-    Note over User,SPIRE: Istio Integration
-    User->>K8s: Configure Istio to use cert-manager
-    Istio->>K8s: Request Certificate for ingress gateway
-    K8s->>CM: Trigger certificate creation
-    CM->>Issuer: Process certificate request
-    Issuer->>CA: Sign certificate
-    CA->>Issuer: Return certificate
-    Issuer->>CM: Deliver certificate
-    CM->>K8s: Store in Secret (istio-ingressgateway-certs)
-    K8s->>Istio: Mount Secret to gateway pods
-    Istio->>Istio: Configure TLS with certificates
-    
-    Note over User,SPIRE: SPIRE Integration
-    User->>K8s: Create Certificate for SPIRE server
-    CM->>Issuer: Request SPIRE server certificate
-    Issuer->>CA: Sign SPIRE cert
-    CA->>Issuer: Return signed cert
-    Issuer->>CM: Deliver certificate
-    CM->>K8s: Store in Secret (spire-server-certs)
-    User->>SPIRE: Configure SPIRE to use cert-manager certs
-    SPIRE->>K8s: Mount certificate Secret
-    SPIRE->>SPIRE: Initialize with CA bundle
-    
-    Note over User,SPIRE: Auto-Renewal Process
-    CM->>CM: Monitor certificate expiry
-    CM->>Issuer: Request renewal (before expiry)
-    Issuer->>CA: Renew certificate
-    CA->>Issuer: Return new certificate
-    Issuer->>CM: Deliver renewed certificate
-    CM->>K8s: Update Secret with new cert
-    K8s->>Istio: Trigger pod reload (if configured)
-    K8s->>SPIRE: Trigger pod reload (if configured)
-```
+![cert-manager Sequence Diagram](images/cert-manager-sequence-diagram.png)
 
 ## Key Concepts
 
@@ -113,65 +54,7 @@ sequenceDiagram
 
 This diagram compares how cert-manager is used differently for Istio and SPIRE, and shows how they can work together.
 
-```mermaid
-graph TB
-    subgraph CM["cert-manager"]
-        CMController[cert-manager Controller]
-        Issuer[Issuer/ClusterIssuer]
-    end
-    
-    subgraph CA["Certificate Authorities"]
-        LetsEncrypt[Let's Encrypt]
-        Vault[HashiCorp Vault]
-        SelfSigned[Self-Signed CA]
-    end
-    
-    subgraph Istio["Istio Use Case"]
-        IstioGW[Istio Ingress Gateway]
-        IstioCert[Certificate: istio-gateway-cert]
-        IstioSecret[Secret: istio-tls]
-        IstioUse["Purpose: External TLS<br/>- Public-facing certificates<br/>- Browser trust required<br/>- 90-day rotation<br/>- DNS-01/HTTP-01 challenges"]
-    end
-    
-    subgraph SPIRE["SPIRE Use Case"]
-        SPIREServer[SPIRE Server]
-        SPIRECert[Certificate: spire-server-cert]
-        SPIRESecret[Secret: spire-bundle]
-        SPIREUse["Purpose: Internal PKI Root<br/>- Bootstrap SPIRE trust<br/>- Internal workload identity<br/>- Long-lived root CA<br/>- SPIRE issues short-lived certs"]
-    end
-    
-    subgraph Hybrid["Combined Architecture"]
-        HybridFlow["1. cert-manager provisions SPIRE root<br/>2. SPIRE issues workload identities<br/>3. Istio uses cert-manager for ingress<br/>4. Istio uses SPIRE for mTLS mesh"]
-    end
-    
-    Issuer --> LetsEncrypt
-    Issuer --> Vault
-    Issuer --> SelfSigned
-    
-    CMController --> IstioCert
-    CMController --> SPIRECert
-    
-    IstioCert --> IstioSecret
-    IstioSecret --> IstioGW
-    IstioGW --> IstioUse
-    
-    SPIRECert --> SPIRESecret
-    SPIRESecret --> SPIREServer
-    SPIREServer --> SPIREUse
-    
-    LetsEncrypt -.->|Recommended| IstioCert
-    Vault -.->|Enterprise| IstioCert
-    SelfSigned -.->|Recommended| SPIRECert
-    Vault -.->|Enterprise| SPIRECert
-    
-    IstioUse --> Hybrid
-    SPIREUse --> Hybrid
-    
-    style Istio fill:#e1f5ff
-    style SPIRE fill:#fff4e1
-    style Hybrid fill:#e8f5e9
-    style CM fill:#f3e5f5
-```
+![cert-manager Comparison Diagram](images/cert-manager-comparison-diagram.png)
 
 ## Key Differences
 
