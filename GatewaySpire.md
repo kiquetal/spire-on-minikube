@@ -110,3 +110,51 @@ kubectl get configmap spire-bundle -n spire-server -o jsonpath='{.data.bundle\.s
   jq -r '.keys[] | select(.use=="x509-svid") | .x5c[0]' | \
   while read -r line; do echo "$line" | base64 -d | openssl x509 -inform der; done > root-cert.pem
 ```
+
+## Verifying Ingress-to-Backend mTLS Communication
+
+### Why You Must Test This Call
+Even if the Ingress Gateway and backend pods appear as `Running` without visible logs crash-looping, testing the connection by making a real request is **essential**. This verification:
+1. **Verifies the mTLS Handshake**: Ensures that the Ingress Gateway successfully trusts the backend's SPIRE-issued SVID, and that the backend workload sidecar trusts the Ingress Gateway's SPIRE-issued SVID.
+2. **Ensures Routing Alignment**: Confirms that your `Gateway` and `VirtualService` resource configs are properly defined, bound to each other, and targeting the correct destination service port.
+3. **Cryptographic Proof of Identity**: Allows you to inspect the `X-Forwarded-Client-Cert` (XFCC) header on the backend request. If the connection is correctly authenticated, the sidecar automatically injects this header containing the client's SPIFFE ID, giving you complete assurance that your Zero-Trust infrastructure is operating securely.
+
+### Step-by-Step Testing Guide
+
+#### Step 1: Apply the Gateway & VirtualService Manifest
+Create the routing rules that link incoming external traffic to your SPIRE-enabled service.
+
+```bash
+kubectl apply -f manifest/ingress-test.yaml
+```
+
+*This manifest maps any request entering the gateway with path `/headers` to the internal `httpbin-simple` service.*
+
+#### Step 2: Call the Endpoint through Ingress
+Trigger a request from a test client (like `sleep-spire`) or curl directly against your Ingress External IP:
+
+```bash
+# Extract the Ingress IP (in Minikube, make sure 'minikube tunnel' is running)
+INGRESS_HOST=$(kubectl -n istio-ingress get service istio-ingress -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+
+# Call the /headers endpoint on the backend through the Ingress
+kubectl exec -n apps deploy/sleep-spire -c sleep -- curl -s http://$INGRESS_HOST/headers
+```
+
+#### Step 3: Verify the Identity Header
+Look closely at the JSON output returned from `httpbin-simple`. A fully operational and secure SPIRE setup will output a `X-Forwarded-Client-Cert` (XFCC) header containing the SPIFFE ID of the Ingress Gateway:
+
+```json
+{
+  "headers": {
+    "Accept": "*/*",
+    "Host": "httpbin-simple:8000",
+    "User-Agent": "curl/8.1.2",
+    "X-Forwarded-Client-Cert": "By=spiffe://example.org/ns/apps/sa/httpbin-simple;Hash=...;Subject=\"\";URI=spiffe://example.org/ns/istio-ingress/sa/istio-ingress"
+  }
+}
+```
+
+> [!IMPORTANT]
+> If you see `URI=spiffe://example.org/ns/istio-ingress/sa/istio-ingress` in the XFCC header, your Ingress Gateway has successfully joined the trust domain and completed a SPIRE-backed cryptographic mutual TLS handshake with the backend.
+
